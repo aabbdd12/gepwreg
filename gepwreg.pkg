@@ -1,0 +1,19 @@
+v 3
+d gepwreg. Percentile Weights Regression with analytical standard errors
+d
+d Author: Araar Abdelkrim
+d Universite Laval & Partnership for Economic Policy (PEP)
+d Support: aabd@ecn.ulaval.ca
+d
+d Distribution-Date: 20260512
+d
+d Description:
+d This package implements the Percentile Weights Regression (PWR)
+d introduced by Araar (2016, 2023). It provides consistent analytical 
+d standard errors (linearisation variance / functional delta method), 
+d MSE-optimal bandwidth selection, and inference under complex survey design.
+d
+f gepwreg.ado
+f gepwreg.sthlp
+f gepwreg.dlg
+f BKF98I.dta

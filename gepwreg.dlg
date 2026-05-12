@@ -1,0 +1,317 @@
+VERSION 16.0
+
+INCLUDE _std_large
+
+
+POSITION . . 900 420
+
+  DEFINE col10  10
+  DEFINE col11  20
+  DEFINE col20  450
+  DEFINE vposds 340
+  DEFINE dlg ipov
+  DEFINE  _lineD1  80
+
+
+
+DIALOG main, label("gepwreg - Percentile Weights Regression") tabtitle("Model")
+BEGIN
+
+    TEXT tx_dv _lft _top _vnwd . , ///
+        label("Dependent variable:")
+
+    VARNAME vn_dv @ _ss @ . , ///
+        numeric ///
+        label("Dependent variable")
+
+    TEXT tx_iv 200 _top 160 . , ///
+        label("Independent variables:")
+
+    VARLIST vl_iv @ _ss _vlwd . , ///
+        fv ///
+        numeric ///
+        label("Independent variables")
+
+    TEXT tx_rv _lft 60 200 . , ///
+        label("Ranking variable (optional):")
+
+    VARNAME vn_rv +190 @ _vnwd . , ///
+        numeric ///
+        label("Ranking variable")
+
+    TEXT tx_per _lft 100 220 . , ///
+        label("Target percentile tau (0,1):")
+
+    EDIT ed_per +190 @ 100 . , ///
+        numonly ///
+        default("0.5") ///
+        label("tau")
+
+    CHECKBOX ck_nc _lft _xls _iwd . , ///
+        label("Suppress constant term")
+
+END
+
+
+
+/* ── Tab 2: Weights ──────────────────────────────────────────────────── */
+
+DIALOG wgt, tabtitle("Weights")
+BEGIN
+
+  GROUPBOX gb_wt   _lft    _top    _iwd    120,                  ///
+           label("Sampling weights")
+
+  /* RADIO group must be consecutive — no controls between first and last */
+  RADIO    rb_svyset _ilft  _ms     _iwd    .,                   ///
+           first                                                  ///
+           onclickon(program wt_svy_on)                          ///
+           label("Use weights declared in svyset (recommended)")
+
+  RADIO    rb_pw   _ilft   _ms     80      .,                    ///
+           onclickon(program wt_exp_on)                          ///
+           label("pweight")
+
+  RADIO    rb_aw   +85     @       80      .,                    ///
+           onclickon(program wt_exp_on)                          ///
+           label("aweight")
+
+  RADIO    rb_fw   +85     @       80      .,                    ///
+           onclickon(program wt_exp_on)                          ///
+           label("fweight")
+
+  RADIO    rb_nw   +85     @       60      .,                    ///
+           last                                                   ///
+           onclickon(program wt_none_on)                         ///
+           label("none")
+
+  /* Weight variable — after RADIO group */
+  TEXT     tx_wv   _ilft   _ms     120     .,                    ///
+           label("Weight variable:")
+  VARNAME  vn_wv   +125    @       _vnwd   .,                    ///
+           numeric                                               ///
+           label("Weight variable")
+
+END
+
+PROGRAM wt_svy_on
+BEGIN
+  call wgt.vn_wv.disable
+END
+
+PROGRAM wt_exp_on
+BEGIN
+  call wgt.vn_wv.enable
+END
+
+PROGRAM wt_none_on
+BEGIN
+  call wgt.vn_wv.disable
+END
+
+
+/* ── Tab 3: Bandwidth ────────────────────────────────────────────────── */
+
+DIALOG bw, tabtitle("Bandwidth")
+BEGIN
+
+  GROUPBOX gb_bw   _lft    _top    _iwd    165,                  ///
+           label("Bandwidth selection")
+
+  /* RADIO group — consecutive (first...last with no controls between) */
+  RADIO    rb_sil  _ilft   _ms     _iwd    .,                    ///
+           first                                                  ///
+           onclickon(program bw_sil_on)                          ///
+           label("Silverman rule  h = c0 * min(sd, IQR/1.34) * n^(-1/5)")
+
+  RADIO    rb_opt  _ilft   _ms     _iwd    .,                    ///
+           onclickon(program bw_opt_on)                          ///
+           label("MSE-optimal bandwidth (two-step plug-in)")
+
+  RADIO    rb_man  _ilft   _ms     _iwd    .,                    ///
+           last                                                   ///
+           onclickon(program bw_man_on)                          ///
+           label("Manual fixed bandwidth")
+
+  /* Controls — after RADIO group */
+  TEXT     tx_c0   _ilft   _ms     220     .,                    ///
+           label("Silverman constant c0 (default 0.9):")
+  EDIT     ed_c0   +225    @       60      .,                    ///
+           numonly                                               ///
+           default("0.9")                                        ///
+           label("c0")
+
+  /* Fixed bandwidth */
+  TEXT     tx_bv   _ilft   _ms     220     .,                    ///
+           label("Fixed bandwidth h (> 0):")
+  EDIT     ed_bv   +225    @       60      .,                    ///
+           numonly                                               ///
+           default("")                                           ///
+           label("h")
+
+END
+
+PROGRAM bw_sil_on
+BEGIN
+  call bw.ed_c0.enable
+  call bw.ed_bv.disable
+END
+
+PROGRAM bw_opt_on
+BEGIN
+  call bw.ed_c0.disable
+  call bw.ed_bv.disable
+END
+
+PROGRAM bw_man_on
+BEGIN
+  call bw.ed_c0.disable
+  call bw.ed_bv.enable
+END
+
+
+/* ── Tab 4: SE / CI ──────────────────────────────────────────────────── */
+
+DIALOG se, tabtitle("Conf. Inter.")
+BEGIN
+
+
+
+  TEXT     tx_lv   20    40    200     .,                    ///
+           label("Confidence level (%):")
+  EDIT     ed_lv   +125    @       50      .,                    ///
+           numonly default("95")                                  ///
+           label("Level")
+
+END
+
+
+
+DIALOG rpt, tabtitle("Reporting")
+BEGIN
+
+    GROUPBOX gb_es _lft _top _iwd _ht3 , ///
+        label("Store estimates (eststo)")
+
+    TEXT tx_es _ilft _ms 90 . , ///
+        label("eststo name:")
+
+    EDIT ed_es +100 @ 140 . , ///
+        label("name")
+
+END
+
+
+
+SCRIPT wt_on
+BEGIN
+    wgt.vn_wv.enable
+END
+
+
+SCRIPT wt_off
+BEGIN
+    wgt.vn_wv.disable
+END
+
+
+
+
+HELP hlp1,   view("help gepwreg")
+RESET res1
+OK ok1,      label("OK")
+CANCEL can1, label("Cancel")
+SUBMIT sub1, label("Submit")
+COPY copy1
+
+
+PROGRAM command
+BEGIN
+
+    put "gepwreg "
+
+    varlist main.vn_dv
+
+    put " "
+
+    varlist main.vl_iv
+
+
+    if wgt.rb_fw {
+        require wgt.vn_wv
+        put " [fw="
+        put wgt.vn_wv
+        put "]"
+    }
+
+    if wgt.rb_aw {
+        require wgt.vn_wv
+        put " [aw="
+        put wgt.vn_wv
+        put "]"
+    }
+
+    if wgt.rb_pw {
+        require wgt.vn_wv
+        put " [pw="
+        put wgt.vn_wv
+        put "]"
+    }
+
+
+    put ", per("
+    put main.ed_per
+    put ")"
+
+
+    if bw.rb_sil {
+
+        if bw.ed_c0 {
+            put " cband("
+            put bw.ed_c0
+            put ")"
+        }
+
+    }
+
+
+    if bw.rb_man {
+
+        require bw.ed_bv
+
+        put " band("
+        put bw.ed_bv
+        put ")"
+
+    }
+
+
+    if main.vn_rv {
+
+        put " rankvar("
+        put main.vn_rv
+        put ")"
+
+    }
+
+
+    if main.ck_nc {
+        put " noconstant"
+    }
+
+
+    if se.ed_lv {
+
+        put " level("
+        put se.ed_lv
+        put ")"
+
+    }
+
+
+    if rpt.ed_es {
+        put _newline "eststo "
+        put rpt.ed_es
+    }
+
+END
