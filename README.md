@@ -15,4 +15,4 @@ The `gepwreg` command estimates the local derivative of an outcome variable with
 You can install the latest version directly from this GitHub repository by typing the following command in Stata:
 
 ```stata
-net install gepwreg, from("[https://raw.githubusercontent.com/Araar-Abdelkrim/gepwreg/main](https://raw.githubusercontent.com/Araar-Abdelkrim/gepwreg/main)") replace
+net install gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/main") replace
