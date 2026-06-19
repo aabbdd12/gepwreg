@@ -172,14 +172,23 @@ END
 
 /* ── Tab 4: SE / CI ──────────────────────────────────────────────────── */
 
-DIALOG se, tabtitle("Conf. Inter.")
+DIALOG se, tabtitle("Std. Errors / CI")
 BEGIN
 
+  /* SE type is automatic:
+     svyset declared  ->  Taylor linearisation (PSU + strata)
+     No svyset        ->  IF-corrected analytical (Deville 1999)
+     Use boot(#) via command line for bootstrap SE               */
+  TEXT     tx_au1  _lft    _top    _iwd    .,                    ///
+           label("SE type detected automatically:")
+  TEXT     tx_au2  _lft    _ms     _iwd    .,                    ///
+           label("  svyset declared  ->  Taylor linearisation (PSU+strata)")
+  TEXT     tx_au3  _lft    _ms     _iwd    .,                    ///
+           label("  No svyset        ->  IF-corrected analytical (Deville 1999)")
 
-
-  TEXT     tx_lv   20    40    200     .,                    ///
+  TEXT     tx_lv   _lft    _xls    200     .,                    ///
            label("Confidence level (%):")
-  EDIT     ed_lv   +125    @       50      .,                    ///
+  EDIT     ed_lv   +205    @       50      .,                    ///
            numonly default("95")                                  ///
            label("Level")
 
@@ -275,6 +284,11 @@ BEGIN
     }
 
 
+    if bw.rb_opt {
+        put " optbw"
+    }
+
+
     if bw.rb_man {
 
         require bw.ed_bv
@@ -284,6 +298,10 @@ BEGIN
         put ")"
 
     }
+
+
+
+
 
 
     if main.vn_rv {
@@ -307,6 +325,8 @@ BEGIN
         put ")"
 
     }
+
+
 
 
     if rpt.ed_es {

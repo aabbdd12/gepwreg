@@ -38,6 +38,7 @@ standard errors
 {synopt:{opt per:centile(#)}}target percentile {it:tau}; default {cmd:percentile(0.5)}{p_end}
 {synopt:{opt cband(#)}}Silverman bandwidth constant; default {cmd:cband(0.9)}{p_end}
 {synopt:{opt band(#)}}manual bandwidth override (0 = use Silverman){p_end}
+{synopt:{opt optbw}}MSE-optimal bandwidth via two-step plug-in (overrides Silverman){p_end}
 {synopt:{opt rankvar(varname)}}ranking variable; default = {it:depvar} (the outcome){p_end}
 {syntab:Standard errors}
 {synopt:{it:(automatic)}}Taylor SE if {cmd:svyset} declared; IF-corrected otherwise{p_end}
@@ -120,6 +121,28 @@ The default is {cmd:cband(0.9)}.
 Useful for sensitivity analysis or when comparing results across
 different percentiles with a common bandwidth. Setting {cmd:band(0)}
 (the default) restores the Silverman rule.
+
+{phang}
+{opt optbw} requests the MSE-optimal bandwidth via a two-step plug-in
+procedure instead of Silverman's rule. The bandwidth minimises an
+asymptotic MSE criterion trading off bias (curvature of the local mean
+of {it:depvar} -- or {it:rankvar} if specified -- across {it:tau}) against
+variance (local residual variance). Internally:
+
+{pmore}1. Pilot bandwidth {it:h_pilot} = 2 x {it:h_Silverman}{p_end}
+{pmore}2. Estimate the local mean of the ranking variable at
+   {it:tau}-0.02, {it:tau}, {it:tau}+0.02 using {it:h_pilot}{p_end}
+{pmore}3. Approximate curvature from the second difference{p_end}
+{pmore}4. Compute {it:h*} from the asymptotic MSE formula{p_end}
+{pmore}5. Clip {it:h*} to [0.3, 5] x {it:h_Silverman} for stability{p_end}
+
+{pmore}{opt optbw} and {opt band(#)} are mutually exclusive.
+When active, the displayed bandwidth is flagged "(MSE-optimal)" and
+{cmd:e(bw_method)} records {cmd:"MSE-optimal"} (otherwise {cmd:"Silverman"}).
+Because {it:h*} can be unstable when the local profile is flat
+(curvature near zero), Silverman's rule remains the recommended default
+for routine use; {opt optbw} is best suited to sensitivity checks or
+percentiles where the coefficient profile is visibly curved.
 
 {phang}
 {opt rankvar(varname)} specifies an alternative variable {it:z}
@@ -245,7 +268,9 @@ For bootstrap validation, use {cmd:boot(B)} via command line and
 {title:Bandwidth selection}
 
 {pstd}
-The default bandwidth follows Silverman (1986):
+Three bandwidth methods are available: Silverman's rule (default),
+a fixed manual value ({opt band(#)}), and an MSE-optimal two-step
+plug-in ({opt optbw}). The default bandwidth follows Silverman (1986):
 
 {pmore}
 h = cband * sigma_p * n^(-1/5)
@@ -286,6 +311,7 @@ diagnostic: values below 50 suggest the bandwidth may be too narrow.
 {synopt:{cmd:e(N)}}number of observations{p_end}
 {synopt:{cmd:e(tau)}}target percentile{p_end}
 {synopt:{cmd:e(h)}}bandwidth used{p_end}
+{synopt:{cmd:e(bw_method)}}{cmd:"Silverman"} or {cmd:"MSE-optimal"}{p_end}
 {synopt:{cmd:e(N_eff)}}effective sample size{p_end}
 {synopt:{cmd:e(boot)}}number of bootstrap replications{p_end}
 
