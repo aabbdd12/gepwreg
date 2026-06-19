@@ -36,9 +36,13 @@ standard errors
 {synoptline}
 {syntab:Main}
 {synopt:{opt per:centile(#)}}target percentile {it:tau}; default {cmd:percentile(0.5)}{p_end}
-{synopt:{opt cband(#)}}Silverman bandwidth constant; default {cmd:cband(0.9)}{p_end}
-{synopt:{opt band(#)}}manual bandwidth override (0 = use Silverman){p_end}
 {synopt:{opt rankvar(varname)}}ranking variable; default = {it:depvar} (the outcome){p_end}
+{syntab:Bandwidth}
+{synopt:{it:(default)}}{bf:MSE-optimal} bandwidth via two-step plug-in (paper Algorithm 1){p_end}
+{synopt:{opt sil:verman}}use the Silverman rule instead of the MSE-optimal default{p_end}
+{synopt:{opt cband(#)}}Silverman constant {it:c0} (also the optimal-rule pilot); default {cmd:cband(0.9)}{p_end}
+{synopt:{opt band(#)}}manual fixed bandwidth (overrides optimal/Silverman){p_end}
+{synopt:{opt optbw}}explicitly request the MSE-optimal default (synonym){p_end}
 {syntab:Standard errors}
 {synopt:{it:(automatic)}}Taylor SE if {cmd:svyset} declared; IF-corrected otherwise{p_end}
 {synopt:{opt vce(svy)}}force Taylor SE explicitly (optional){p_end}
@@ -118,8 +122,35 @@ The default is {cmd:cband(0.9)}.
 {phang}
 {opt band(#)} overrides the automatic bandwidth with a fixed value.
 Useful for sensitivity analysis or when comparing results across
-different percentiles with a common bandwidth. Setting {cmd:band(0)}
-(the default) restores the Silverman rule.
+different percentiles with a common bandwidth. {cmd:band(0)} (the
+default) keeps the automatic rule (MSE-optimal, unless {opt silverman}).
+
+{phang}
+{opt silverman} selects the Silverman (1986) rule
+{it:h} = {it:cband} * {it:sigma_p} * {it:n}^(-1/5) {bf:instead of} the
+MSE-optimal default. Useful for symmetric outcomes with an approximately
+linear coefficient profile, or to reproduce pre-v1.3 results.
+
+{phang}
+{cmd:gepwreg} uses the {bf:MSE-optimal} bandwidth {bf:by default} (paper
+Algorithm 1): a two-step plug-in minimising an asymptotic MSE criterion
+that trades off bias (curvature of the local mean of {it:depvar} -- or
+{it:rankvar} if specified -- across {it:tau}) against variance (local
+residual variance). Internally:
+
+{pmore}1. Pilot bandwidth {it:h_pilot} = 2 x {it:h_Silverman}{p_end}
+{pmore}2. Estimate the local mean of the ranking variable at
+   {it:tau}-0.02, {it:tau}, {it:tau}+0.02 using {it:h_pilot}{p_end}
+{pmore}3. Approximate curvature from the second difference{p_end}
+{pmore}4. Compute {it:h*} from the asymptotic MSE formula{p_end}
+{pmore}5. Clip {it:h*} to [0.3, 5] x {it:h_Silverman} for stability{p_end}
+
+{pmore}At most one of {opt optbw}, {opt silverman}, {opt band(#)} may be
+given. The displayed bandwidth shows the active method and
+{cmd:e(bw_method)} records {cmd:"MSE-optimal"}, {cmd:"Silverman"}, or
+{cmd:"Manual"}. {opt optbw} is accepted as an explicit synonym for the
+default. When the local profile is flat (curvature near zero) the clip
+bounds {it:h*}; {opt silverman} may be preferred there.
 
 {phang}
 {opt rankvar(varname)} specifies an alternative variable {it:z}
@@ -245,7 +276,11 @@ For bootstrap validation, use {cmd:boot(B)} via command line and
 {title:Bandwidth selection}
 
 {pstd}
-The default bandwidth follows Silverman (1986):
+Three bandwidth methods are available: the {bf:MSE-optimal} two-step
+plug-in ({bf:default}, paper Algorithm 1), {opt silverman}'s rule, and a
+fixed manual value ({opt band(#)}). The Silverman bandwidth (used as the
+optimal-rule pilot, and as the stand-alone rule under {opt silverman})
+is:
 
 {pmore}
 h = cband * sigma_p * n^(-1/5)
@@ -253,12 +288,14 @@ h = cband * sigma_p * n^(-1/5)
 {pstd}
 where sigma_p = min(sd(p-hat), IQR(p-hat)/1.34) is a robust scale
 of the percentile ranks. The constant {it:cband} = 0.9 is the standard
-Gaussian kernel multiplier.
+Gaussian kernel multiplier. The MSE-optimal rule (the default) adapts
+{it:h} to {it:tau} via the local curvature; see {opt optbw} above.
 
 {pstd}
-This rule was designed to minimise the integrated squared error of a
-{it:density estimate}, not the MSE of regression coefficients. It is a
-reasonable default but may not be optimal. In particular:
+The Silverman rule was designed to minimise the integrated squared error
+of a {it:density estimate}, not the MSE of regression coefficients --
+which is precisely why the {bf:MSE-optimal} rule is the default. The
+Silverman rule (via {opt silverman}) remains useful, but note:
 
 {phang2}
 (i) When the local fit is strong (high local R-squared near {it:tau}),
@@ -286,6 +323,7 @@ diagnostic: values below 50 suggest the bandwidth may be too narrow.
 {synopt:{cmd:e(N)}}number of observations{p_end}
 {synopt:{cmd:e(tau)}}target percentile{p_end}
 {synopt:{cmd:e(h)}}bandwidth used{p_end}
+{synopt:{cmd:e(bw_method)}}{cmd:"MSE-optimal"} (default), {cmd:"Silverman"}, or {cmd:"Manual"}{p_end}
 {synopt:{cmd:e(N_eff)}}effective sample size{p_end}
 {synopt:{cmd:e(boot)}}number of bootstrap replications{p_end}
 
@@ -338,10 +376,12 @@ diagnostic: values below 50 suggest the bandwidth may be too narrow.
 {phang2}{cmd:. gepwreg lexp i.hhedlevel hhagey hhsize [fw=fw], per(0.5) boot(1000)}{p_end}
 {phang2}{cmd:. gepwreg_setable}{p_end}
 
-{pstd}{ul:Manual bandwidth}{p_end}
+{pstd}{ul:Bandwidth choice (MSE-optimal is the default)}{p_end}
 
-{phang2}{cmd:. gepwreg lexp hhagey hhsize [fw=fw], per(0.5) band(0.04)}{p_end}
-{phang2}{cmd:. di "h = " e(h) "  N_eff = " e(N_eff)}{p_end}
+{phang2}{cmd:. gepwreg lexp hhagey hhsize [fw=fw], per(0.5)}             (MSE-optimal, default){p_end}
+{phang2}{cmd:. gepwreg lexp hhagey hhsize [fw=fw], per(0.5) silverman}  (Silverman rule){p_end}
+{phang2}{cmd:. gepwreg lexp hhagey hhsize [fw=fw], per(0.5) band(0.04)} (manual fixed){p_end}
+{phang2}{cmd:. di "h = " e(h) "  method = " e(bw_method) "  N_eff = " e(N_eff)}{p_end}
 
 {pstd}{ul:SE comparison table}{p_end}
 

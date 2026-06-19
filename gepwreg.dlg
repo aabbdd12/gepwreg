@@ -118,15 +118,16 @@ BEGIN
   GROUPBOX gb_bw   _lft    _top    _iwd    165,                  ///
            label("Bandwidth selection")
 
-  /* RADIO group — consecutive (first...last with no controls between) */
-  RADIO    rb_sil  _ilft   _ms     _iwd    .,                    ///
+  /* RADIO group — consecutive (first...last with no controls between).
+     MSE-optimal is FIRST → checked by default (paper v1.3 default).        */
+  RADIO    rb_opt  _ilft   _ms     _iwd    .,                    ///
            first                                                  ///
+           onclickon(program bw_opt_on)                          ///
+           label("MSE-optimal bandwidth (two-step plug-in)  [default]")
+
+  RADIO    rb_sil  _ilft   _ms     _iwd    .,                    ///
            onclickon(program bw_sil_on)                          ///
            label("Silverman rule  h = c0 * min(sd, IQR/1.34) * n^(-1/5)")
-
-  RADIO    rb_opt  _ilft   _ms     _iwd    .,                    ///
-           onclickon(program bw_opt_on)                          ///
-           label("MSE-optimal bandwidth (two-step plug-in)")
 
   RADIO    rb_man  _ilft   _ms     _iwd    .,                    ///
            last                                                   ///
@@ -159,7 +160,8 @@ END
 
 PROGRAM bw_opt_on
 BEGIN
-  call bw.ed_c0.disable
+  /* c0 tunes the Silverman pilot used by the MSE-optimal two-step rule */
+  call bw.ed_c0.enable
   call bw.ed_bv.disable
 END
 
@@ -172,14 +174,23 @@ END
 
 /* ── Tab 4: SE / CI ──────────────────────────────────────────────────── */
 
-DIALOG se, tabtitle("Conf. Inter.")
+DIALOG se, tabtitle("Std. Errors / CI")
 BEGIN
 
+  /* SE type is automatic:
+     svyset declared  ->  Taylor linearisation (PSU + strata)
+     No svyset        ->  IF-corrected analytical (Deville 1999)
+     Use boot(#) via command line for bootstrap SE               */
+  TEXT     tx_au1  _lft    _top    _iwd    .,                    ///
+           label("SE type detected automatically:")
+  TEXT     tx_au2  _lft    _ms     _iwd    .,                    ///
+           label("  svyset declared  ->  Taylor linearisation (PSU+strata)")
+  TEXT     tx_au3  _lft    _ms     _iwd    .,                    ///
+           label("  No svyset        ->  IF-corrected analytical (Deville 1999)")
 
-
-  TEXT     tx_lv   20    40    200     .,                    ///
+  TEXT     tx_lv   _lft    _xls    200     .,                    ///
            label("Confidence level (%):")
-  EDIT     ed_lv   +125    @       50      .,                    ///
+  EDIT     ed_lv   +205    @       50      .,                    ///
            numonly default("95")                                  ///
            label("Level")
 
@@ -266,6 +277,21 @@ BEGIN
 
     if bw.rb_sil {
 
+        put " silverman"
+
+        if bw.ed_c0 {
+            put " cband("
+            put bw.ed_c0
+            put ")"
+        }
+
+    }
+
+
+    if bw.rb_opt {
+
+        put " optbw"
+
         if bw.ed_c0 {
             put " cband("
             put bw.ed_c0
@@ -284,6 +310,10 @@ BEGIN
         put ")"
 
     }
+
+
+
+
 
 
     if main.vn_rv {
@@ -307,6 +337,8 @@ BEGIN
         put ")"
 
     }
+
+
 
 
     if rpt.ed_es {

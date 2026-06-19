@@ -1,10 +1,10 @@
-*! gepwreg.ado  v1.2  Araar A.
+*! gepwreg.ado  v1.3  Araar A.  (MSE-optimal bandwidth is the default; use silverman to revert)
 *! Percentile Weights Regression
 *! Araar (2016, 2023) ; Deville (1999) ; Newey & McFadden (1994)
 /* ─────────────────────────────────────────────────────────────────────────────
    Syntax:
      gepwreg depvar [indepvars] [fw/aw/pw] [if] [in],
-           [ PERcentile(#) CBAND(#) BAND(#) BOOT(#) Level(#) noConstant ]
+           [ PERcentile(#) CBAND(#) BAND(#) OPTbw BOOT(#) Level(#) noConstant ]
    ───────────────────────────────────────────────────────────────────────── */
 #delimit ;
 
@@ -16,8 +16,9 @@ syntax varlist(min=1 numeric fv) [fw aw pw] [if] [in] [,
     PERcentile(real 0.5)
     CBAND(real 0.9)
     BAND(real 0)
+    OPTbw
+    SILverman
     BOOT(integer 0)
-	NSEED(integer 878455667)
     Level(cilevel)
     noConstant
     VCE(string)
@@ -124,6 +125,28 @@ if `boot' < 0 {;
     di as error "boot() must be a non-negative integer" ;
     error 198 ;
 } ;
+/* ── Bandwidth method ───────────────────────────────────────────────────── */
+/* MSE-optimal is the DEFAULT (paper Algorithm 1).  Override with:           */
+/*   silverman   → Silverman rule  h = cband * min(sd,IQR/1.34) * n^(-1/5)    */
+/*   band(#)     → manual fixed bandwidth                                     */
+/* optbw is accepted as an explicit synonym for the (optimal) default.       */
+local n_bwspec = (`band' != 0) + ("`silverman'" != "") + ("`optbw'" != "") ;
+if `n_bwspec' > 1 {;
+    di as error "specify at most one of band(), silverman, optbw" ;
+    error 198 ;
+} ;
+if `band' != 0 {;
+    local do_optbw = 0 ;
+    local bw_label "Manual" ;
+} ;
+else if "`silverman'" != "" {;
+    local do_optbw = 0 ;
+    local bw_label "Silverman" ;
+} ;
+else {;
+    local do_optbw = 1 ;          /* DEFAULT: MSE-optimal */
+    local bw_label "MSE-optimal" ;
+} ;
 local addcons = ("`constant'" == "") ;
 
 /* ── 3b. Parse vce() option for survey design ───────────────────────────── */
@@ -186,7 +209,7 @@ scalar _gepwreg_h_tmp = 0 ;
 mata: _gepwreg_main("`depvar'", "`indepvars_mata'", "`fw_var'", "`touse'",
                   `percentile', `cband', `band', `boot', `addcons',
                   `do_svy', "`svy_psu'", "`svy_strata'",
-                  "`rank_var'") ;
+                  "`rank_var'", `do_optbw') ;
 
 /* ── 5. Retrieve scalars ─────────────────────────────────────────────────── */
 local h     = _gepwreg_h ;
@@ -219,6 +242,7 @@ if `boot' > 0 {;
 } ;
 ereturn scalar tau   = `tau' ;
 ereturn scalar h     = `h' ;
+ereturn local  bw_method "`bw_label'" ;
 ereturn scalar N_eff = `n_eff' ;
 ereturn scalar boot   = `boot' ;
 ereturn scalar do_svy = `do_svy' ;
@@ -242,7 +266,7 @@ di "" ;
 di as text "Percentile Weights Regression" ;
 di as text "{hline 60}" ;
 di as text %28s "Target percentile (tau)" " = " as result %6.4f `tau' ;
-di as text %28s "Bandwidth (h)"           " = " as result %9.6f `h' ;
+di as text %28s "Bandwidth (h)"           " = " as result %9.6f `h' as text " (`bw_label')" ;
 di as text %28s "Weights"                 " = " as result "`wgt_name'" ;
 di as text %28s "Ranking variable"        " = " as result "`rank_label'" ;
 di as text %28s "Observations"            " = " as result %7.0f `n_obs' ;
@@ -277,6 +301,7 @@ end ;
 
 /* Drop previous definitions so the ado can be sourced more than once */
 capture mata: mata drop _gepwe_wp()
+capture mata: mata drop _gepwreg_hopt()
 capture mata: mata drop _wls()
 capture mata: mata drop _revCumSum()
 capture mata: mata drop _se_IF()
@@ -340,6 +365,76 @@ real matrix _gepwe_wp(real colvector y,
 
     st_numscalar("_gepwreg_h_tmp", h)
     return((w, pc))
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   _gepwreg_hopt()
+   MSE-optimal bandwidth via two-step plug-in (see paper, eq. h*).
+
+     h*(tau) = [ sigma2(tau) / (8 * n * sqrt(2*pi) * [mu''(tau)]^2) ]^(1/5)
+
+   Algorithm (paper Algorithm 1):
+     1. Pilot h_pilot = 2 * h_Silverman
+     2. Estimate local-constant fit of y on percentile rank at
+        tau-d, tau, tau+d using h_pilot  (d = 0.02)
+     3. mu''(tau) ~ [mu(tau+d) - 2*mu(tau) + mu(tau-d)] / d^2
+     4. sigma2(tau) = weighted residual variance at tau (from step 2)
+     5. h* clipped to [0.3*h_Silverman, 5*h_Silverman] for stability
+        (curvature near zero -> h* would otherwise diverge)
+
+   NOTE: h* is computed using y (or zrank) curvature only -- a single
+   scalar bandwidth is then applied to ALL regressors, consistent with
+   how Silverman's rule is also depvar-based in this module.
+   ───────────────────────────────────────────────────────────────────────── */
+real scalar _gepwreg_hopt(real colvector y,
+                           real colvector fw,
+                           real scalar    tau,
+                           real scalar    cband,
+                           real scalar    n)
+{
+    real scalar    h_sil, h_pilot, d, mu_lo, mu_mid, mu_hi, curv
+    real scalar    sigma2, h_star, lo_clip, hi_clip
+    real matrix    wp_sil, wp_lo, wp_mid, wp_hi
+    real colvector w_sil, w_lo, w_mid, w_hi
+
+    /* Step 0: pilot Silverman bandwidth (band_in=0 triggers Silverman) */
+    wp_sil = _gepwe_wp(y, fw, tau, cband, 0, J(0,1,.))
+    h_sil  = st_numscalar("_gepwreg_h_tmp")
+    h_pilot = 2 * h_sil
+
+    d = 0.02
+
+    /* Step 1: local-constant fits (weighted mean of y) at tau-d, tau, tau+d */
+    wp_lo  = _gepwe_wp(y, fw, tau - d, cband, h_pilot, J(0,1,.))
+    w_lo   = wp_lo[., 1]
+    mu_lo  = sum(w_lo :* y) / sum(w_lo)
+
+    wp_mid = _gepwe_wp(y, fw, tau,     cband, h_pilot, J(0,1,.))
+    w_mid  = wp_mid[., 1]
+    mu_mid = sum(w_mid :* y) / sum(w_mid)
+
+    wp_hi  = _gepwe_wp(y, fw, tau + d, cband, h_pilot, J(0,1,.))
+    w_hi   = wp_hi[., 1]
+    mu_hi  = sum(w_hi :* y) / sum(w_hi)
+
+    /* Step 2: curvature (second derivative) of local mean profile */
+    curv = (mu_hi - 2*mu_mid + mu_lo) / d^2
+
+    /* Step 3: local residual variance at tau (using pilot weights) */
+    sigma2 = sum(w_mid :* (y :- mu_mid):^2) / sum(w_mid)
+
+    /* Step 4: MSE-optimal h* (paper eq. h*); guard against curv ~ 0 */
+    if (abs(curv) < 1e-8) curv = 1e-8
+    h_star = (sigma2 / (8 * n * sqrt(2*pi()) * curv^2))^(0.2)
+
+    /* Step 5: clip for stability (paper Algorithm 1, step 5) */
+    lo_clip = 0.3 * h_sil
+    hi_clip = 5.0 * h_sil
+    if (h_star < lo_clip) h_star = lo_clip
+    if (h_star > hi_clip) h_star = hi_clip
+
+    return(h_star)
 }
 
 
@@ -469,56 +564,122 @@ real matrix _se_naive(real matrix  X,
 
 /* ─────────────────────────────────────────────────────────────────────────────
    _se_boot()
-   Pairs bootstrap -- kernel weights RECONSTRUCTED at every draw.
-   B = number of replications.
-   ───────────────────────────────────────────────────────────────────────── */
-real matrix _se_boot(real matrix  X,
+   Bootstrap standard errors.
+
+   If survey design is declared (do_svy=1):
+     Cluster (PSU) bootstrap stratifié — equivalent to:
+       bootstrap, strata(strata) cluster(psu) reps(B): gepwreg ...
+     Algorithm:
+       For each stratum h with n_h PSUs:
+         Draw n_h PSUs WITH REPLACEMENT from stratum h
+         Stack ALL observations from drawn PSUs (PSU drawn k times → k copies)
+       Run gepwreg on the stacked sample with RECOMPUTED kernel weights
+     This exactly replicates what Stata's bootstrap prefix does.
+
+   If no survey design (do_svy=0):
+     Pairs bootstrap — observations drawn with replacement individually.
+     Kernel weights RECONSTRUCTED at every draw.
+   ─────────────────────────────────────────────────────────────────────────── */
+real matrix _se_boot(real matrix   X,
                      real colvector y,
                      real colvector fw,
+                     real colvector w0,
                      real scalar    tau,
                      real scalar    cband,
                      real scalar    band_in,
                      real colvector beta0,
-                     real scalar    B)
+                     real scalar    B,
+                     real scalar    do_svy,
+                     string scalar  touse,
+                     string scalar  svy_psu,
+                     string scalar  svy_strata)
 {
-    real scalar    n, k, b
-    real colvector idx, y_b, fw_b, w_b
-    real matrix    BB, wp_b
+    real scalar    n, k, b, h_val, p_val, i_h, i_p, n_h, n_b
+    real colvector idx, y_b, fw_b, w_b, drawn
+    real colvector psu_vec, strata_vec, strata_ids, psu_in_h
+    real colvector mask_h, mask_p, obs_idx, idx_b
+    real matrix    BB, wp_b, X_b
 
     n      = rows(y)
     k      = rows(beta0)
     BB     = J(B, k, .)
-    rseed(89488678)
+    rseed(12345)
 
-    b = 1
-    while (b <= B) {
-        idx     = ceil(n :* runiform(n, 1))
-        y_b     = y[idx]
-        fw_b    = fw[idx]
-        wp_b    = _gepwe_wp(y_b, fw_b, tau, cband, band_in, J(0,1,.))
-        w_b     = wp_b[., 1]
-        BB[b, ] = _wls(X[idx, ], y_b, w_b)'
-        b++
+    if (do_svy & svy_psu != "" & svy_strata != "") {
+        /* ── Cluster (PSU) bootstrap within strata ──────────────────────
+           Mirrors: bootstrap, strata(strata) cluster(psu): gepwreg ...
+           For each replication:
+             1. For each stratum: draw n_h PSUs with replacement
+             2. Stack observations from selected PSUs
+             3. Recompute kernel weights on stacked sample
+             4. Run WLS on stacked sample                                */
+        st_view(psu_vec,    ., svy_psu,    touse)
+        st_view(strata_vec, ., svy_strata, touse)
+        strata_ids = uniqrows(strata_vec)
+
+        b = 1
+        while (b <= B) {
+            /* Build index of selected observations for this replication */
+            idx_b = J(0, 1, .)
+
+            i_h = 1
+            while (i_h <= rows(strata_ids)) {
+                h_val    = strata_ids[i_h]
+                mask_h   = (strata_vec :== h_val)
+                psu_in_h = uniqrows(select(psu_vec, mask_h))
+                n_h      = rows(psu_in_h)
+
+                /* Draw n_h PSUs with replacement */
+                drawn = ceil(n_h :* runiform(n_h, 1))
+
+                /* Append observations from each drawn PSU */
+                i_p = 1
+                while (i_p <= n_h) {
+                    p_val   = psu_in_h[drawn[i_p]]
+                    mask_p  = mask_h :& (psu_vec :== p_val)
+                    obs_idx = select((1::n), mask_p)
+                    idx_b   = idx_b \ obs_idx
+                    i_p++
+                }
+                i_h++
+            }
+
+            /* Bootstrap sample */
+            n_b  = rows(idx_b)
+            y_b  = y[idx_b]
+            fw_b = fw[idx_b]
+            X_b  = X[idx_b, .]
+
+            /* Recompute kernel weights on bootstrap sample */
+            wp_b    = _gepwe_wp(y_b, fw_b, tau, cband, band_in, J(0,1,.))
+            w_b     = wp_b[., 1]
+            BB[b, ] = _wls(X_b, y_b, w_b)'
+            b++
+        }
+    }
+    else {
+        /* ── Pairs bootstrap (no survey design declared) ─────────────── */
+        b = 1
+        while (b <= B) {
+            idx     = ceil(n :* runiform(n, 1))
+            y_b     = y[idx]
+            fw_b    = fw[idx]
+            wp_b    = _gepwe_wp(y_b, fw_b, tau, cband, band_in, J(0,1,.))
+            w_b     = wp_b[., 1]
+            BB[b, ] = _wls(X[idx, ], y_b, w_b)'
+            b++
+        }
     }
     return(variance(BB))
 }
 
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   _gepwreg_main() : called from Stata program gepwreg
-   ───────────────────────────────────────────────────────────────────────── */
-
-/* ─────────────────────────────────────────────────────────────────────────────
    _se_svy()
    Taylor linearisation variance under stratified cluster design.
-
-   V_svy = A^{-1} [sum_h (n_h/(n_h-1)) sum_i (z_hi - z_bar_h)(z_hi - z_bar_h)'] A^{-1} / n^2
-
-   where z_hi = sum_{j in PSU(h,i)} psi_j   (k-vector of IF scores)
-
-   If no strata: treat all PSUs as one stratum.
-   If no PSU   : treat each observation as its own PSU (reverts to IF formula).
-   ─────────────────────────────────────────────────────────────────────────── */
+     V_svy = A^{-1} [ sum_h n_h/(n_h-1) sum_i (z_hi-z_bar_h)(z_hi-z_bar_h)' ] A^{-1} / n^2
+   where z_hi = sum_{j in PSU(h,i)} psi_j  (k-vector of IF scores).
+   ───────────────────────────────────────────────────────────────────────── */
 real matrix _se_svy(real matrix  X,
                     real colvector y,
                     real colvector w,
@@ -532,31 +693,25 @@ real matrix _se_svy(real matrix  X,
                     real scalar    n,
                     real colvector z_ord)
 {
-    real scalar    k, n_h, n_psu
-    real matrix    psi, A, Ainv, meat, dev, Z_h
-    real colvector psu_vec, strata_vec, psu_ids, strata_ids
-    real colvector z_bar, mask_h, mask_p, e, dw, ord, psu_in_h
-    real matrix    S_dir, dS, revCS
+    real scalar    k, n_h
+    real matrix    psi, A, Ainv, meat, dev, Z_h, S_dir, dS, revCS
+    real colvector psu_vec, strata_vec, strata_ids, psu_in_h
+    real colvector z_bar, mask_h, mask_p, e, dw, ord
     real scalar    h_val, p_val, i_h, i_p
-    string scalar  psu_id_str, str_h
 
     k    = cols(X)
     A    = (X :* w)' * X / n
     Ainv = invsym(A)   /* stable for near-singular A (sparse PSU or category) */
 
-    /* ── Compute raw IF scores psi (n x k) ───────────────────────────── */
+    /* ── Raw IF scores psi (n x k) ───────────────────────────────────── */
     e     = y - X * beta
     dw    = (-0.5 / h^2) :* (pc :- tau) :* w
     S_dir = X :* (w :* e)
     dS    = X :* (dw :* e)
-    /* Note: z_ord is not passed to _se_svy in current version.
-       The Taylor variance is computed from psi scores which already
-       incorporate the z-based ordering via _se_IF. */
-    /* Use z-based ordering when rankvar() specified */
     ord   = (rows(z_ord) == n) ? z_ord : order(y, 1)
     revCS = J(n, k, 0)
     revCS[ord,] = _revCumSum(dS[ord,])
-    psi   = S_dir + revCS :/ n              /* (n x k) */
+    psi   = S_dir + revCS :/ n
 
     /* ── Load PSU and strata identifiers ─────────────────────────────── */
     if (svy_psu != "") {
@@ -564,7 +719,6 @@ real matrix _se_svy(real matrix  X,
     }
     else {
         /* No PSU declared: treat each observation as its own PSU */
-        /* This gives a conservative (large) variance estimate     */
         psu_vec = (1::n)
         printf("{txt}Note: no PSU declared in svyset; treating each obs as its own PSU.\n")
         printf("{txt}      Variance will be conservative. Recommend: svyset psu [pw=fw], strata(strata)\n")
@@ -627,15 +781,18 @@ void _gepwreg_main(string scalar depvar,
                  real scalar   do_svy,
                  string scalar svy_psu,
                  string scalar svy_strata,
-                 string scalar rank_var)
+                 string scalar rank_var,
+                 real scalar   do_optbw)
 {
     real colvector  y, fw, w, pc, beta, zrank, z_ord_v
     real matrix     X, wp, V_IF, V_naive, V_boot, V_svy
-    real scalar     n, k, h, n_eff
+    real scalar     n, k, h, n_eff, band_use, z_for_h
+    real colvector  zrank_for_h
 
     st_view(y,  ., depvar,  touse)
     st_view(fw, ., fw_var,  touse)
     n = rows(y)
+
     /* Load ranking variable (empty if same as depvar) */
     zrank = J(0, 1, .)
     if (rank_var != depvar & rank_var != "") {
@@ -649,30 +806,40 @@ void _gepwreg_main(string scalar depvar,
     else X = J(n, 1, 1)
     k = cols(X)
 
-    wp      = _gepwe_wp(y, fw, tau, cband, band_in, zrank)
-    w       = wp[., 1]
-    pc      = wp[., 2]
-    h       = st_numscalar("_gepwreg_h_tmp")
-    n_eff   = sum(w)^2 / sum(w:^2)
-    beta    = _wls(X, y, w)
+    /* MSE-optimal bandwidth: compute h* and override band_in           */
+    /* Curvature/variance are based on the ranking variable (y or zrank) */
+    band_use = band_in
+    if (do_optbw) {
+        zrank_for_h = (rows(zrank) == n) ? zrank : y
+        band_use = _gepwreg_hopt(zrank_for_h, fw, tau, cband, n)
+    }
 
-    /* ── Standard IF variance ──────────────────────────────────────────── */
-    /* Compute z-based ordering for indirect IF term */
+    wp    = _gepwe_wp(y, fw, tau, cband, band_use, zrank)
+    w     = wp[., 1]
+    pc    = wp[., 2]
+    h     = st_numscalar("_gepwreg_h_tmp")
+    n_eff = sum(w)^2 / sum(w:^2)
+    beta  = _wls(X, y, w)
+
+    /* z-based ordering for IF indirect term */
     z_ord_v = (rows(zrank) == n) ? order(zrank, 1) : order(y, 1)
+
+    /* Standard IF variance */
     V_IF    = _se_IF(X, y, w, pc, h, tau, beta, z_ord_v)
     V_naive = _se_naive(X, y, w, beta)
 
-    /* ── Survey design variance (Taylor linearisation) ─────────────────── */
+    /* Survey Taylor variance — overrides V_IF as main SE */
     if (do_svy) {
         V_svy = _se_svy(X, y, w, pc, h, tau, beta,
                         touse, svy_psu, svy_strata, n, z_ord_v)
         st_matrix("_gepwreg_Vs", V_svy)
-        /* Override V_IF with V_svy as main displayed SE */
         V_IF = V_svy
     }
 
+    /* Bootstrap variance */
     if (B > 0) {
-        V_boot = _se_boot(X, y, fw, tau, cband, band_in, beta, B)
+        V_boot = _se_boot(X, y, fw, w, tau, cband, band_in, beta, B,
+                          do_svy, touse, svy_psu, svy_strata)
         st_matrix("_gepwreg_Vb", V_boot)
     }
 
@@ -683,41 +850,34 @@ void _gepwreg_main(string scalar depvar,
     st_numscalar("_gepwreg_neff", n_eff)
     st_numscalar("_gepwreg_n",    n)
 }
-
 end
 #delimit ;
-
 
 /* ─────────────────────────────────────────────────────────────────────────────
    gepwreg_setable : side-by-side SE comparison table
    ───────────────────────────────────────────────────────────────────────── */
 capture program drop gepwreg_setable ;
 program define gepwreg_setable ;
-
     if "`e(cmd)'" != "gepwreg" {;
-        di as error "gepwreg_setable: last estimation must be pwreg" ;
+        di as error "gepwreg_setable: last estimation must be gepwreg" ;
         error 301 ;
     } ;
-
-    local k       = colsof(e(b)) ;
-    matrix b      = e(b) ;
-    matrix V_IF   = e(V) ;
-    matrix V_n    = e(V_naive) ;
+    matrix b    = e(b) ;
+    matrix V_IF = e(V) ;
+    matrix V_n  = e(V_naive) ;
     local hasBoot = (e(boot) > 0) ;
     if `hasBoot' matrix V_bt = e(V_boot) ;
-
     di "" ;
     di as text "SE comparison  (tau=" as result %5.3f e(tau)
        as text "  h=" as result %8.6f e(h) as text ")" ;
     di as text "{hline 72}" ;
-
     if `hasBoot' {;
         di as text %18s "Variable"
            %11s "Coeff."
            %11s "SE_naive"
            %11s "SE_IF"
            %11s "SE_boot"
-           %9s "IF/Boot" ;
+           %9s  "IF/Boot" ;
     } ;
     else {;
         di as text %18s "Variable"
@@ -727,7 +887,6 @@ program define gepwreg_setable ;
            %10s "IF/Naive" ;
     } ;
     di as text "{hline 72}" ;
-
     local names : colnames e(b) ;
     local j = 1 ;
     foreach nm of local names {;
@@ -738,13 +897,13 @@ program define gepwreg_setable ;
             local sb = sqrt(V_bt[`j',`j']) ;
             local r  = `si' / `sb' ;
             di as text %18s abbrev("`nm'",18)
-               as result %11.5f `bj' %11.6f `sn'
-                         %11.5f `si' %11.6f `sb' %9.3f `r' ;
+               as result %11.5f `bj' %11.5f `sn'
+                         %11.5f `si' %11.5f `sb' %9.3f `r' ;
         } ;
         else {;
             local r  = `si' / `sn' ;
             di as text %18s abbrev("`nm'",18)
-               as result %11.5f `bj' %11.6f `sn'
+               as result %11.5f `bj' %11.5f `sn'
                          %11.5f `si' %10.3f `r' ;
         } ;
         local ++j ;
@@ -761,5 +920,4 @@ program define gepwreg_setable ;
         di as text "           stored in e(V_svy)" ;
     } ;
     di "" ;
-
 end ;
