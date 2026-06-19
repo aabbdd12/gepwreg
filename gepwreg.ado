@@ -335,8 +335,8 @@ real matrix _gepwe_wp(real colvector y,
     /* zrank : alternative ranking variable z (rows=n) or empty (rows=0).
        If empty, rank on y (standard PWR).
        If provided, rank on z (generalised rankvar option).           */
-    real scalar    n, h, tmp, q25, q75, sd_pc
-    real colvector ord, fw_s, pc_s, pc_sorted, u, w_s, w, pc, z_use
+    real scalar    n, h, tmp, q25, q75, sd_pc, i
+    real colvector ord, fw_s, pc_s, pc_sorted, u, w_s, w, pc, z_use, z_s
 
     n         = rows(y)
 
@@ -346,6 +346,16 @@ real matrix _gepwe_wp(real colvector y,
     ord       = order(z_use, 1)       /* sort on z (or y if default) */
     fw_s      = fw[ord]
     pc_s      = runningsum(fw_s) :/ sum(fw_s)
+
+    /* Ties: assign each group of equal z the SAME rank = F_n(z) (paper eq 3),
+       so p-hat depends only on the value, not on the sort order of ties.
+       Removes run-to-run drift in beta and the MSE-optimal bandwidth.       */
+    z_s       = z_use[ord]
+    i         = n - 1
+    while (i >= 1) {
+        if (z_s[i] == z_s[i+1]) pc_s[i] = pc_s[i+1]
+        i--
+    }
 
     pc_sorted = sort(pc_s, 1)
     q25       = pc_sorted[ceil(0.25 * n)]
