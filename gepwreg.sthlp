@@ -44,8 +44,9 @@ standard errors
 {synopt:{opt band(#)}}manual fixed bandwidth (overrides optimal/Silverman){p_end}
 {synopt:{opt optbw}}explicitly request the MSE-optimal default (synonym){p_end}
 {syntab:Standard errors}
-{synopt:{it:(automatic)}}Taylor SE if {cmd:svyset} declared; IF-corrected otherwise{p_end}
-{synopt:{opt vce(svy)}}force Taylor SE explicitly (optional){p_end}
+{synopt:{it:(automatic)}}Taylor SE if {cmd:svyset} declares a PSU or strata; IF-corrected otherwise{p_end}
+{synopt:{opt vce(svy)}}Taylor SE explicitly (optional){p_end}
+{synopt:{opt vce(if)}}IF-corrected SE even on {cmd:svyset} data{p_end}
 {synopt:{opt boot(#)}}pairs bootstrap — command line only; default {cmd:boot(0)}{p_end}
 {syntab:Display}
 {synopt:{opt l:evel(#)}}confidence level; default {cmd:level(95)}{p_end}
@@ -68,10 +69,11 @@ The post-estimation command
 {cmd:gepwreg_setable}
 
 {phang}
-typed after {cmd:gepwreg}, displays the naive, IF-corrected and bootstrap
-standard errors of the last estimation side by side, and notes when a Taylor
-(survey) variance is also stored.  The {cmd:boot(#)} option (command line
-only) is required for the bootstrap column.
+typed after {cmd:gepwreg}, displays the naive, IF-corrected, Taylor (when
+the {cmd:svyset} design was used) and bootstrap standard errors of the last
+estimation side by side, with the ratio of the two most informative ones.
+The {cmd:boot(#)} option (command line only) is required for the bootstrap
+column.
 
 {hline}
 {marker description}{...}
@@ -189,12 +191,13 @@ the z-based ordering.
 
 {phang}
 {opt vce(svy)} explicitly requests Taylor linearisation SE under the
-survey design declared by {helpb svyset}. This option is {bf:optional} —
-{cmd:gepwreg} automatically uses Taylor SE when {cmd:svyset} has been
-declared, without requiring {opt vce(svy)}.
-The PSU, strata, and probability weights are read directly from {cmd:svyset}.
-At least 2 PSUs per stratum are required; a warning is issued when
-any stratum has fewer than 5 PSUs.
+survey design declared by {helpb svyset}. This option is {bf:optional} --
+{cmd:gepwreg} uses Taylor SE whenever {cmd:svyset} declares a PSU or
+strata (up to version 1.3 the option was required).  {opt vce(if)} keeps
+the IF-corrected SE on {cmd:svyset} data.  The PSU, strata, and probability
+weights are read directly from {cmd:svyset}.  At least 2 PSUs per stratum
+are required; a warning is issued when any stratum has fewer than 5 PSUs in
+the estimation sample.
 
 {phang}
 {opt boot(#)} requests pairs bootstrap SE with {it:#} replications.
@@ -343,6 +346,7 @@ diagnostic: values below 50 suggest the bandwidth may be too narrow.
 {synopt:{cmd:e(b)}}coefficient vector{p_end}
 {synopt:{cmd:e(V)}}main VCV: Taylor if svyset declared, IF otherwise{p_end}
 {synopt:{cmd:e(V_IF)}}IF-based analytical VCV (always stored){p_end}
+{synopt:{cmd:e(V_svy)}}Taylor VCV under the {cmd:svyset} design (when used){p_end}
 {synopt:{cmd:e(V_naive)}}naive WLS variance matrix (inconsistent, reference only){p_end}
 {synopt:{cmd:e(V_boot)}}bootstrap variance matrix (if {cmd:boot()}>0){p_end}
 
@@ -475,8 +479,11 @@ Chapman & Hall, London.
 own indicator.  Up to 1.3, the second level of a factor variable was pooled
 with the base level and reported as omitted, so the coefficients on the other
 levels were relative to the two pooled levels; continuous and binary
-regressors were unaffected.  Base levels are carried in {cmd:e(b)}.
-{cmd:gepwreg_setable} is a separate file.
+regressors were unaffected.  Base levels are carried in {cmd:e(b)}.  Taylor
+SE are used as soon as {cmd:svyset} declares a PSU or strata, as documented
+({opt vce(if)} to keep the IF-corrected SE); the count of PSUs per stratum
+behind the warning was wrong; {cmd:e(V_IF)} is stored under a survey design
+too; {cmd:gepwreg_setable} is a separate file and shows the Taylor column.
 
 {phang}
 1.3 (May 2026).  MSE-optimal bandwidth as the default ({cmd:silverman} to

@@ -176,6 +176,19 @@ local svy_strata "" ;
 if "`svy'" != "" {;
     local vce "linearized" ;
 } ;
+/* (1.4) Taylor linearisation is the default whenever svyset declares a PSU
+   or strata, as the help always said; up to 1.3 it required vce(svy).
+   vce(if) keeps the IF-corrected standard errors on svyset data.          */
+if "`vce'" == "" {;
+    qui svyset ;
+    if "`r(su1)'" != "" | "`r(strata1)'" != "" {;
+        local vce "svy" ;
+        local svy_auto = 1 ;
+    } ;
+} ;
+else if lower("`vce'")=="if" | lower("`vce'")=="analytic" {;
+    local vce "" ;
+} ;
 if "`vce'" != "" {;
     if lower("`vce'")=="svy" | lower("`vce'")=="survey" | lower("`vce'")=="linearized" {;
         /* Check svyset has been called */
@@ -192,7 +205,8 @@ if "`vce'" != "" {;
             qui replace `fw_var' = `r(wvar)' if `touse' ;
             local wgt_name "PW[`r(wvar)'] (svyset)" ;
         } ;
-        di as text "Survey design detected:" ;
+        if ("`svy_auto'" == "1") di as text "Survey design detected (svyset); specify vce(if) for the IF-corrected s.e." ;
+        else                      di as text "Survey design detected:" ;
         if "`svy_psu'" == "" {;
             di as text "  PSU    : (not declared — variance may be conservative)" ;
         } ;
@@ -202,16 +216,22 @@ if "`vce'" != "" {;
         di as text "  Strata : `svy_strata'" ;
         /* Check minimum PSU per stratum */
         if "`svy_strata'" != "" & "`svy_psu'" != "" {;
-            qui tab `svy_strata' if `touse' ;
+            /* (1.4) number of PSUs per stratum in the estimation sample;
+               up to 1.3 the count marked the first observation of the
+               stratum, not of each PSU, and always reported 1              */
             qui {;
-                tempvar _npsu ;
-                bysort `svy_strata' (`svy_psu') : gen `_npsu' = (_n==1) ;
-                bysort `svy_strata' : replace `_npsu' = sum(`_npsu') ;
-                bysort `svy_strata' : replace `_npsu' = `_npsu'[_N] ;
+                tempvar _first _npsu ;
+                bysort `touse' `svy_strata' `svy_psu' : gen byte `_first' = (_n == 1) & `touse' ;
+                bysort `touse' `svy_strata' (`svy_psu') : gen `_npsu' = sum(`_first') ;
+                bysort `touse' `svy_strata' : replace `_npsu' = `_npsu'[_N] ;
             } ;
             qui sum `_npsu' if `touse' ;
             local min_psu = r(min) ;
-            if `min_psu' < 5 {;
+            if `min_psu' < 2 {;
+                di as text "Warning: a stratum has a single PSU in the estimation sample;" ;
+                di as text "  its contribution to the Taylor variance is not defined." ;
+            } ;
+            else if `min_psu' < 5 {;
                 di as text "Warning: minimum PSU/stratum = `min_psu'." ;
                 di as text "  Taylor SE may be unreliable. Recommend n_h >= 10." ;
             } ;
@@ -268,6 +288,7 @@ if (`kfull' > `kest') {;
     matrix _gepwreg_b  = _gepwreg_b  * `E' ;
     matrix _gepwreg_V  = `E'' * _gepwreg_V  * `E' ;
     matrix _gepwreg_Vn = `E'' * _gepwreg_Vn * `E' ;
+    matrix _gepwreg_Vi = `E'' * _gepwreg_Vi * `E' ;
     if `do_svy'   matrix _gepwreg_Vs = `E'' * _gepwreg_Vs * `E' ;
     if `boot' > 0 matrix _gepwreg_Vb = `E'' * _gepwreg_Vb * `E' ;
     local vnames `vfull' ;
@@ -278,6 +299,8 @@ matrix rownames _gepwreg_V  = `vnames' ;
 matrix colnames _gepwreg_V  = `vnames' ;
 matrix rownames _gepwreg_Vn = `vnames' ;
 matrix colnames _gepwreg_Vn = `vnames' ;
+matrix rownames _gepwreg_Vi = `vnames' ;
+matrix colnames _gepwreg_Vi = `vnames' ;
 
 /* ── 7. Post results ─────────────────────────────────────────────────────── */
 /* (1.4) buildfvinfo stores with e(b) the factor-variable information that
@@ -288,6 +311,7 @@ matrix colnames _gepwreg_Vn = `vnames' ;
 ereturn post _gepwreg_b _gepwreg_V, esample(`touse') obs(`n_obs')
         depname(`depvar') buildfvinfo findomitted ;
 ereturn matrix V_naive = _gepwreg_Vn ;
+ereturn matrix V_IF    = _gepwreg_Vi ;
 if `do_svy' {;
     matrix rownames _gepwreg_Vs = `vnames' ;
     matrix colnames _gepwreg_Vs = `vnames' ;
@@ -896,6 +920,7 @@ void _gepwreg_main(string scalar depvar,
     V_IF    = _se_IF(X, y, w, pc, h, tau, beta, z_ord_v)
     V_naive = _se_naive(X, y, w, beta)
 
+    st_matrix("_gepwreg_Vi", V_IF)          /* (1.4) e(V_IF) always stored */
     /* Survey Taylor variance — overrides V_IF as main SE */
     if (do_svy) {
         V_svy = _se_svy(X, y, w, pc, h, tau, beta,

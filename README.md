@@ -31,7 +31,10 @@ up to 1.3, the second level of an `i.` variable was pooled with the base
 level and reported as omitted, so the coefficients on the other levels were
 relative to the two pooled levels. Continuous and binary regressors were
 unaffected. Results published with 1.3 for factor-variable levels should be
-re-run.
+re-run. The same release makes Taylor standard errors the default as soon as
+the data are `svyset` with a PSU or strata (`vce(if)` keeps the IF-corrected
+ones), corrects the PSU-per-stratum count behind the design warning, and
+stores `e(V_IF)` under a survey design as well.
 
 ## Installation
 
@@ -57,8 +60,9 @@ gepwreg lexp size male urban i.gse [pw=weight], per(0.5)      // IF-corrected s.
 svyset psu [pw=weight], strata(strata)
 gepwreg lexp size male urban i.gse, per(0.5)                  // Taylor s.e., automatically
 
+gepwreg lexp size male urban i.gse, per(0.5) vce(if)          // IF s.e. on svyset data
 gepwreg lexp size male urban i.gse [pw=weight], per(0.5) boot(500)
-gepwreg_setable                                               // naive vs IF vs bootstrap s.e.
+gepwreg_setable                                               // naive, IF, (Taylor,) bootstrap s.e.
 ```
 
 `help gepwreg` documents the options, the three standard-error estimators,
