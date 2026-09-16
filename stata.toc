@@ -1,8 +1,8 @@
 v 3
-d GEPWREG: Percentile Weights Regression
+d gepwreg: Percentile Weights Regression
 d
-d Author: Araar Abdelkrim
-d Universite Laval & Partnership for Economic Policy (PEP)
+d Author: Abdelkrim Araar
+d Universite Laval and Partnership for Economic Policy (PEP)
 d Support: aabd@ecn.ulaval.ca
 d
 p gepwreg Percentile Weights Regression with analytical standard errors

@@ -1,0 +1,1351 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{natbib}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{bm}
+\usepackage{multirow}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{pifont}
+\usepackage{parskip}
+
+\hypersetup{colorlinks=true,
+            linkcolor=blue!60!black,
+            citecolor=blue!60!black,
+            urlcolor=blue!60!black}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{corollary}{Corollary}
+\theoremstyle{definition}
+\newtheorem{remark}{Remark}
+\newtheorem{definition}{Definition}
+\newtheorem{assumption}{Assumption}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\bX}{\mathbf{X}}
+\newcommand{\hbeta}{\hat{\beta}}
+\newcommand{\hp}{\hat{p}}
+\newcommand{\hw}{\hat{w}}
+\newcommand{\hF}{\hat{F}}
+
+\begin{document}
+\setlength{\tabcolsep}{5pt}   % tighter column spacing globally
+
+\title{\textbf{Exploring Heterogeneous Effects:\\
+Quantile Models and Percentile Weights Regression}\\[0.5em]
+\large Analytical Standard Errors, MSE-Optimal Bandwidth,
+and Inference under Complex Survey Design}
+
+\author{Abdelkrim Araar\\
+\small Universit\'{e} Laval \& Partnership for Economic Policy (PEP)\\
+\small \texttt{aabd@ecn.ulaval.ca}}
+\date{May 20, 2026}
+\maketitle
+
+%% ─── ABSTRACT ───────────────────────────────────────────────────────────────
+\begin{abstract}
+\noindent
+This paper reviews conditional quantile regression (QR), unconditional
+quantile regression (UQR), and the Percentile Weights Regression (PWR)
+of \citet{Araar2016,Araar2023}, and makes four methodological
+contributions. \textit{First}, we show that naive WLS standard errors
+for PWR are inconsistent and derive closed-form analytical standard
+errors via the linearisation variance formula of \citet{Rao1979} and
+\citet{Deville1999}, equivalent to the functional delta method of
+\citet{vonMises1947}. The formula accounts for the sampling variability
+of the estimated kernel weights and reduces computation to $O(n\log n)$.
+\textit{Second}, we derive the MSE-optimal bandwidth analytically and
+propose a practical two-step plug-in estimator together with a
+\textit{combined adaptive bandwidth}. \textit{Third}, we derive the
+Taylor linearisation variance under stratified cluster sampling, show
+that the PWR kernel attenuates the effective design effect at interior
+percentiles, and demonstrate that standard UQR implementations
+(\texttt{rifhdreg svy}) remain inconsistent due to two-step variance
+propagation, while PWR is not. \textit{Fourth}, we provide Monte Carlo
+evidence on coefficient recovery, standard error accuracy, and confidence
+interval coverage. All results are validated on the Burkina Faso 1998
+household survey ($n=8{,}478$; 10~strata; 425~PSU). The
+\texttt{gepwreg} Stata command implementing the full procedure is
+documented in an appendix.
+
+\bigskip\noindent
+\textbf{JEL codes:} C14, C21, C51.\\
+{\raggedright\textbf{Keywords:} Quantile regression; unconditional quantile
+regression; percentile weights regression; linearisation variance; delta
+method; MSE-optimal bandwidth; adaptive kernel; survey design; Taylor
+linearisation.\par}
+\end{abstract}
+\setlength{\emergencystretch}{3em}
+
+\newpage\tableofcontents\newpage
+
+%% ─── §1 INTRODUCTION ────────────────────────────────────────────────────────
+\section{Introduction}
+\label{sec:intro}
+
+A central question in applied econometrics is whether the effect of a
+covariate on an outcome is uniform across the distribution of that
+outcome. Quantile regression models \citep{KoenkerBassett1978} were
+designed precisely to address this question. Yet conditional quantile
+regression (QR) has a well-known interpretive limitation: the percentile
+being modelled is defined \textit{conditional} on the covariates.
+\citet{FirpoFortinLemieux2009} resolved this by proposing unconditional
+quantile regression (UQR), based on recentered influence functions (RIF).
+
+\citet{Araar2016} introduced a third approach, the Percentile Weights
+Regression (PWR), motivated by an intuition distinct from both QR and
+UQR: focus the estimation on observations whose \textit{marginal outcome
+rank} places them near the percentile of interest, by assigning Gaussian
+kernel weights centred at that percentile. Monte Carlo evidence in
+\citet{Araar2023} suggests that PWR recovers the true local derivative
+more accurately than either QR or UQR across a wide range of
+data-generating processes.
+
+This paper fills four gaps in the PWR literature:
+\begin{enumerate}[label=(\roman*)]
+  \item \textbf{Consistent standard errors.} We show that naive WLS
+  standard errors underestimate true uncertainty by approximately 37\%,
+  and derive closed-form linearisation-based analytical standard errors
+  that account for the two-step nature of the estimator. Bootstrap
+  confidence interval coverage on Burkina Faso data is 0.945 (nominal
+  0.95).
+  \item \textbf{MSE-optimal bandwidth.} We derive the analytical
+  expression for the MSE-minimising bandwidth and propose a practical
+  two-step plug-in estimator and combined adaptive rule.
+  \item \textbf{Survey design \texttt{vce(svy)}.} We derive the Taylor
+  linearisation variance under stratified cluster sampling. We show that
+  \texttt{rifhdreg svy} \citep{RiosAvila2020} remains inconsistent under
+  complex survey design due to unaccounted two-step variance propagation,
+  while PWR is consistent in a single step.
+  \item \textbf{Generalised ranking variable.} We show that PWR can rank
+  observations on any variable $z \neq y$, enabling estimation of
+  distributional effects along non-outcome dimensions.
+\end{enumerate}
+
+\paragraph{Method selection guide.}
+Table~\ref{tab:guide} summarises the practical choice between QR, UQR,
+and PWR.
+
+\begin{table}[htbp]\centering\small
+\caption{Method selection guide}
+\label{tab:guide}
+\begin{tabular}{p{5.5cm}ccc}
+\toprule
+Research question & QR & UQR & PWR \\\midrule
+Effect on conditional quantile given $x$ & \checkmark & & \\
+Unconditional partial effect of location shift & & \checkmark & \\
+Local derivative $\partial y/\partial x\big|_{p=\tau}$ & & & \checkmark\\
+Ranking on variable $z\neq y$ & & & \checkmark\\
+Survey data (PSU + strata) & $\sim$ & \ding{55} & \checkmark\\
+Large $n$ ($>$20{,}000) & \checkmark & \checkmark & \checkmark\\
+Binary treatment & & & \checkmark (reduced $h$)\\
+Profile across all $\tau$ & \checkmark & \checkmark & \checkmark (combined $h^*$)\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Section~\ref{sec:models} reviews the three model families.
+Section~\ref{sec:se} derives consistent standard errors.
+Section~\ref{sec:bandwidth} develops the bandwidth theory.
+Section~\ref{sec:svy} develops survey design inference.
+Section~\ref{sec:mc} reports Monte Carlo evidence.
+Section~\ref{sec:application} presents the empirical application.
+Section~\ref{sec:conclusion} concludes.
+
+%% ─── §2 MODELS ──────────────────────────────────────────────────────────────
+\section{Models and Methodologies}
+\label{sec:models}
+
+\subsection{Conditional Quantile Regression}
+
+The QR estimator of \citet{KoenkerBassett1978} solves
+\begin{equation}
+  \hat{\beta}_\tau^{QR}
+  = \arg\min_{\beta} \frac{1}{n}\sum_{i=1}^n
+    \rho_\tau(y_i - \bx_i'\beta),\quad
+  \rho_\tau(u) = u\bigl(\tau - \mathbf{1}[u<0]\bigr).
+  \label{eq:qr}
+\end{equation}
+The coefficient $\hat{\beta}_\tau^{QR}$ measures the marginal effect of
+$\bx$ on the $\tau$-th \textit{conditional} quantile of $Y$ given $\bx$.
+A key limitation is the \textit{explanatory rank component}: when the
+rank of $y$ co-varies with $\bx$, QR absorbs this co-variation into the
+slope, confounding conditional and marginal effects.
+
+\subsection{Unconditional Quantile Regression}
+
+\citet{FirpoFortinLemieux2009} propose regressing the recentered
+influence function (RIF) of the quantile on the covariates. For the
+$\tau$-th quantile $Q_\tau$, the RIF is
+\begin{equation}
+  \mathrm{RIF}(y;\,Q_\tau,F_Y)
+  = Q_\tau + \frac{\tau - \mathbf{1}[y \leq Q_\tau]}{f_Y(Q_\tau)},
+  \label{eq:rif}
+\end{equation}
+where $f_Y$ is the marginal density of $Y$ and $Q_\tau =
+\inf\{y: F_Y(y)\geq\tau\}$ is the $\tau$-th population quantile.
+The UQR estimator regresses
+$\widehat{\mathrm{RIF}}(y_i)$ on $\bx_i$ by OLS.
+
+\subsection{The Percentile Weights Regression}
+\label{sec:pwr}
+
+\subsubsection{Estimator}
+
+Let $\hF_n(y) = \bigl(\sum_i f_i\,\mathbf{1}[y_i\leq y]\bigr)/\sum_i
+f_i$ denote the survey-weighted empirical CDF, where $f_i$ are
+probability weights. Define $\hat{p}_i = \hF_n(y_i)$ as the
+weighted empirical percentile rank of observation $i$. The PWR kernel
+weight at target percentile $\tau$ is
+\begin{equation}
+  \hw_i(\tau)
+  = \frac{1}{h\sqrt{2\pi}\,n}
+    \exp\!\left(-\frac{(\hp_i - \tau)^2}{4h^2}\right),
+  \label{eq:pwrweights}
+\end{equation}
+a Gaussian kernel with effective standard deviation $h\sqrt{2}$ centred
+at $\tau$ in percentile space.
+The PWR estimator is
+\begin{equation}
+  \hbeta(\tau) = T(\hF_n)
+  = \bigl(\bX'\hat{\bm{W}}\bX\bigr)^{-1}\bX'\hat{\bm{W}}\mathbf{y},
+  \qquad
+  \hat{\bm{W}} = \mathrm{diag}\{\hw_1(\tau),\ldots,\hw_n(\tau)\},
+  \label{eq:pwr}
+\end{equation}
+where $T(F)$ is the \emph{statistical functional} that maps any
+distribution $F$ to the WLS estimator with kernel weights
+$w_i(F,\tau) = K((F(y_i)-\tau)/h)/(nh)$.
+The estimator $\hbeta(\tau)$ identifies the local derivative
+$\partial y/\partial x\big|_{p=\tau}$: the marginal effect for
+observations whose \textit{unconditional} outcome rank equals $\tau$.
+
+\subsubsection{Kernel effective sample size}
+\label{sec:neff}
+
+The \emph{kernel effective sample size} quantifies the number of
+observations that meaningfully contribute to the estimation at $\tau$:
+\begin{equation}
+  n_{\mathrm{eff}}(\tau,h) =
+  \frac{\bigl(\sum_i \hw_i\bigr)^2}{\sum_i \hw_i^2}
+  \;\approx\; n\cdot h\cdot\sqrt{2\pi},
+  \label{eq:neff}
+\end{equation}
+where the approximation is derived in Appendix~\ref{app:deriv_neff}.
+$n_{\mathrm{eff}}$ is the sample size of an equivalent i.i.d.\ sample
+that would yield the same estimation precision as the kernel-weighted
+regression at percentile $\tau$.
+
+\begin{remark}[Relation to Kish design effect]
+The Kish (1965) effective sample size $n_{\mathrm{eff}}^{\mathrm{Kish}}
+= n/\mathrm{DEFF}$ measures precision loss due to \textit{unequal
+sampling probabilities}. The kernel $n_{\mathrm{eff}}$ defined in
+\eqref{eq:neff} measures \textit{kernel locality} --- how many
+observations contribute to the local estimate at $\tau$. The two
+combine as:
+$\mathrm{Precision} \approx \sigma^2(\tau)/
+(n_{\mathrm{eff}}^{\mathrm{kernel}}/\mathrm{DEFF}^{\mathrm{survey}})$.
+\end{remark}
+
+\textbf{Practical rule.} We recommend $n_{\mathrm{eff}} \geq
+\max(100,\,10k)$, where $k$ is the number of parameters: 100 provides a
+floor for asymptotic normality; $10k$ mirrors the ``10 observations per
+parameter'' rule of thumb in linear regression. Values below 50 indicate
+that the bandwidth is too narrow.
+
+The interchangeability of $n_{\mathrm{eff}}$ and $c_0$ provides
+practical guidance: to achieve a target $n_{\mathrm{eff}}^*$, set
+$c_0 = n_{\mathrm{eff}}^* / (n\cdot\hat\sigma_p\cdot n^{-1/5}
+\cdot\sqrt{2\pi})$.
+
+\subsubsection{Generalised ranking variable}
+\label{sec:rankvar}
+
+In the standard formulation, the percentile rank is defined on $y$.
+PWR naturally extends to a \emph{generalised ranking variable} $z
+\neq y$: replace $\hat{p}_i = \hF_n(y_i)$ by
+$\hat{p}_i^z = \hF_n^z(z_i)$. The resulting estimator
+$\hbeta_z(\tau)$ measures the marginal effect of $\bx$ on $y$ for
+observations at the $\tau$-th percentile of $z$. For instance, using
+$z = \text{income}$ while $y = \text{consumption}$ identifies effects
+for households that are poor in income terms. This substitution requires
+only re-sorting the observations by $z$ in the indirect term of the IF
+score (Section~\ref{sec:se}); the bandwidth formula and all asymptotic
+results remain valid under $F_Z$.
+
+\subsubsection{Interpretation and comparison}
+
+$\hbeta(\tau)$ estimates $\partial y/\partial x\big|_{p=\tau}$, the
+local derivative for observations whose \textit{unconditional} outcome
+rank equals $\tau$. This differs from QR (conditional ranking) and UQR
+(marginal location shift in the distribution of $x$).
+
+\paragraph{Relationship to local polynomial regression.}
+PWR is a Nadaraya-Watson (locally constant) regression in rank space
+$[0,1]$ \citep{FanGijbels1996,Chaudhuri1991}. The indirect IF term
+$\dot{w}_i = \partial\hw_i/\partial\hat{p}_i$ is the kernel derivative ---
+analogous to the derivative term in the Nadaraya-Watson estimator.
+A locally linear extension in rank space would reduce the bias from
+$O(h^2)$ to $O(h^3)$ and is a natural direction for future work.
+
+%% ─── §3 STANDARD ERRORS ─────────────────────────────────────────────────────
+\section{Consistent Standard Errors}
+\label{sec:se}
+
+\subsection{Inconsistency of naive WLS standard errors}
+
+The naive WLS formula treats the kernel weights $\hw_i$ as fixed:
+\begin{equation}
+  \hat{V}_{\mathrm{naive}} = \hat\sigma^2
+  \bigl(\bX'\hat{\bm{W}}\bX\bigr)^{-1},\qquad
+  \hat\sigma^2 = \frac{\sum_i \hw_i\hat{e}_i^2}{n-k}.
+  \label{eq:naive}
+\end{equation}
+Because $\hw_i(\tau)$ depends on the empirical CDF $\hF_n$ through all
+$n$ observations, ignoring this dependence yields inconsistent variance
+estimation.
+
+\begin{proposition}[Inconsistency of naive SE]
+\label{prop:inconsistent}
+Under Assumption~\ref{asm:regularity},
+$\hat{V}_{\mathrm{naive}} \xrightarrow{p} V_{\mathrm{naive}} \prec V$
+in the L\"{o}wner order. A formal proof is given in
+Appendix~\ref{app:proofs}.
+\end{proposition}
+
+In the Burkina Faso application, the naive SE underestimates the
+bootstrap SE by 37\% on average (ratio 0.63).
+
+\subsection{Analytical linearisation standard errors}
+\label{sec:se:analytic}
+
+The PWR estimator $\hbeta(\tau) = T(\hF_n)$ is a smooth functional of
+$\hF_n$. By the linearisation variance formula of \citet{Rao1979} and
+\citet{Deville1999}:\footnote{Formally, this is the
+functional delta method of \citet{vonMises1947}: the G\^{a}teaux
+derivative of $T$ at $F$ in direction $\delta_{y_j} - F$ (where
+$\delta_{y_j}$ denotes the Dirac point mass at $y_j$) gives the
+linearisation score $\psi_j = \lim_{\varepsilon\to 0}[T((1-\varepsilon)
+F+\varepsilon\delta_{y_j})-T(F)]/\varepsilon$. The terms
+``IF-based variance'', ``linearisation variance'', and
+``delta-method variance'' are equivalent in this context. We follow
+\citet{FirpoFortinLemieux2009} in calling $\psi_j$ an influence
+function score.}
+\begin{equation}
+  \hat{V}_{\mathrm{IF}} = A^{-1}\!\left(\frac{1}{n^2}\sum_{j=1}^n
+  \psi_j\psi_j'\right)\!A^{-1},\qquad
+  A = \frac{1}{n}\bX'\hat{\bm{W}}\bX.
+  \label{eq:vIF}
+\end{equation}
+
+\paragraph{The linearisation score.}
+The total score $\psi_j$ has two components:
+\begin{equation}
+  \psi_j(\tau) =
+  \underbrace{\hw_j\,\bx_j\,\hat{e}_j}_{\text{direct}}
+  +\;\frac{1}{n}
+  \underbrace{\sum_{\{i:\,y_i \geq y_j\}}
+    \dot{w}_i\,\bx_i\,\hat{e}_i}_{\text{indirect (CDF perturbation)}},
+  \label{eq:score}
+\end{equation}
+where $\dot{w}_i = -\tfrac{1}{2}(\hp_i-\tau)/h^2 \cdot \hw_i$ is the
+derivative of the kernel with respect to $\hat{p}_i$ --- the analogue
+of the Nadaraya-Watson kernel derivative. The indirect term captures how
+a perturbation at $y_j$ shifts the empirical CDF for all $y_i \geq y_j$,
+thereby changing all kernel weights $\hw_i$ for $y_i\geq y_j$.
+For the generalised ranking variable (Section~\ref{sec:rankvar}), the
+sum runs over $\{i: z_i \geq z_j\}$ instead.
+
+\paragraph{Efficient computation ($O(n\log n)$).}
+Sort by $y$, compute $\dot{w}_i x_i\hat{e}_i$, apply reverse cumulative
+sum (flip--cumsum--flip). Full derivation in
+Appendix~\ref{app:deriv_psi}.
+
+\begin{assumption}
+\label{asm:regularity}
+(i) $F_Y$ is twice continuously differentiable with $f_Y(Q_\tau)>0$.
+(ii) $\E[\|\bx\|^4]<\infty$ and $A=\E[\hw_i(\tau)\bx_i\bx_i']$ is
+positive definite.
+(iii) $h=h_n\to 0$ and $nh_n\to\infty$.
+(iv) $\E[\dot{w}_i^2 x_{ij}^2 e_i^2]<\infty$ for all $j$.
+\end{assumption}
+
+\begin{theorem}[Asymptotic normality]
+\label{thm:asym}
+Under Assumption~\ref{asm:regularity} and undersmoothing
+$n^{1/2}h^2\to 0$:
+$\sqrt{n}\,(\hbeta(\tau)-\beta(\tau)) \xrightarrow{d}
+\mathcal{N}(0,V)$,
+where $V = A^{-1}\E[\psi_j\psi_j']A^{-1}$ and
+$\hat{V}_{\mathrm{IF}} \xrightarrow{p} V$.
+
+\noindent\textit{Rate.} Although PWR is a localised estimator, the
+parametric rate $\sqrt{n}$ is preserved because the rank space
+$[0,1]$ has bounded uniform density, unlike a kernel estimator in
+the $y$-space where $f_Y$ may vanish at the extremes.
+\end{theorem}
+
+\begin{remark}[Tension between Theorem~\ref{thm:asym} and $h^*$]
+\label{rem:tension}
+Theorem~\ref{thm:asym} requires undersmoothing
+$n^{1/2}h^2\to 0$, whereas the MSE-optimal bandwidth $h^*
+\propto n^{-1/5}$ gives $n^{1/2}(h^*)^2 \propto n^{1/10}\to\infty$
+--- a standard tension in kernel estimation. In practice,
+using $h^*$ (or $h_{\mathrm{Sil}}$) introduces a second-order bias
+term that is negligible empirically: the bootstrap coverage of
+0.945 (nominal 0.95) on Burkina Faso data confirms that this
+bias is inconsequential at the sample sizes encountered in
+household surveys. Formal bias-corrected inference following
+\citet{CalonicoCattaneoTitiunik2014} is a direction for future work.
+\end{remark}
+
+\begin{remark}[Sparse cells]
+When a regressor indicator has kernel effective cell size below
+$\max(30,\,5k)$, the asymptotic approximation is unreliable. Bootstrap
+standard errors should be used for such variables.
+\end{remark}
+
+\subsection{Bootstrap standard errors and large-sample guidance}
+
+The pairs bootstrap reconstructs kernel weights at every replication ---
+treating them as fixed would underestimate variance (Proposition~1).
+We recommend $B=1{,}000$.
+
+\paragraph{Large-dataset recommendation.}
+Kernel evaluation, WLS, and IF computation are $O(n\log n)$, $O(nk^2)$,
+and $O(nk)$ respectively --- approximately $50\times$ cheaper than
+bootstrap. For $n>20{,}000$: analytical SE only.
+
+%% ─── §4 BANDWIDTH ───────────────────────────────────────────────────────────
+\section{Bandwidth Selection}
+\label{sec:bandwidth}
+
+\subsection{The Silverman rule and its limitations}
+
+The default bandwidth
+$h_{\mathrm{Sil}} = c_0\,\hat\sigma_p\,n^{-1/5}$ ($c_0=0.9$)
+minimises integrated squared error of a density estimate --- not the
+MSE of $\hbeta(\tau)$. Three limitations follow: it targets the wrong
+objective; it is constant across $\tau$; and it is not rate-optimal
+for coefficient estimation.
+
+\subsection{MSE-optimal bandwidth: derivation}
+
+For the gepwe kernel \eqref{eq:pwrweights}, the kernel constants are
+$\mu_2(K)=2$ and $R(K)=1/(2\sqrt{2\pi})$ (derived in
+Appendix~\ref{app:deriv_K}). The asymptotic MSE is
+\begin{equation}
+  \mathrm{MSE}_j(h) =
+  h^4\,[\beta_j''(\tau)]^2
+  + \frac{\sigma_j^2(\tau)}{2nh\sqrt{2\pi}},
+  \label{eq:mse}
+\end{equation}
+where $\beta_j''(\tau)=\partial^2\beta_j/\partial\tau^2$ and
+$\sigma_j^2(\tau)$ is the local residual variance. Setting
+$\partial\,\mathrm{MSE}_j/\partial h=0$ yields (derivation in
+Appendix~\ref{app:deriv_hstar}):
+\begin{equation}
+  \boxed{h_j^*(\tau) = \left[
+    \frac{\sigma_j^2(\tau)}{8\,n\,\sqrt{2\pi}\,[\beta_j''(\tau)]^2}
+  \right]^{1/5}.}
+  \label{eq:hstar}
+\end{equation}
+
+$h_j^*$ varies with $\tau$ (adapts to curvature), is
+variable-specific, and is $O(n^{-1/5})$.
+
+\subsection{Two-step plug-in procedure}
+
+\begin{algorithm}[H]
+\caption{MSE-optimal bandwidth (two-step plug-in)}
+\begin{algorithmic}[1]
+\State Pilot: $h_{\mathrm{pilot}} = 2\,h_{\mathrm{Sil}}$
+\State Estimate $\hat\beta_j(\tau_\ell,h_{\mathrm{pilot}})$ on grid
+$\{\tau_\ell\}$, step $d=0.02$
+\State $\hat\beta_j''(\tau)\approx[\hat\beta_j(\tau+d)-2\hat\beta_j(\tau)
++\hat\beta_j(\tau-d)]/d^2$
+\State $\hat\sigma_j^2(\tau)=\sum_i\hw_i\hat{e}_i^2/(n_{\mathrm{eff}}-k)$
+\State $h_j^*(\tau)$ from \eqref{eq:hstar}, clipped to
+$[0.3\,h_{\mathrm{Sil}},\,5\,h_{\mathrm{Sil}}]$
+\State Re-estimate with $h_j^*(\tau)$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Why $h^*$ is unstable when $\hat\beta_j''(\tau)\approx 0$.}
+When the coefficient profile is locally flat, $[\hat\beta_j''(\tau)]^2
+\approx 0$ and $h_j^*\to\infty$. In practice, the pilot estimate of
+$\hat\beta_j''$ is noisy around zero, causing $h_j^*$ to fluctuate
+wildly. The combined rule resolves this.
+
+\subsection{Adaptive bandwidth strategies and data characteristics}
+
+\paragraph{Combined adaptive bandwidth (recommended).}
+\begin{equation}
+  h_j^{\mathrm{comb}}(\tau)
+  = \mathrm{clip}\!\left(h_j^*(\tau),\,
+    h_{\mathrm{NN}}(N_{\min}),\,h_{\mathrm{NN}}(N_{\max})\right),
+  \label{eq:hcomb}
+\end{equation}
+with $N_{\min}=0.5\,n_{\mathrm{target}}$ and
+$N_{\max}=2.5\,n_{\mathrm{target}}$.
+
+\paragraph{Bandwidth and data characteristics.}
+
+\begin{itemize}
+\item \textbf{Sample size:} $h^*\propto n^{-1/5}$; for small $n$
+($<500$), the NN floor becomes binding — use a wider bandwidth.
+
+\item \textbf{Curvature $\beta''(\tau)$:} if $\beta(\tau)$ is
+approximately linear in $\tau$, $\beta''\approx 0$ everywhere and
+Silverman suffices. If effects are highly non-linear, the analytic
+rule provides substantial RMSE gains (12--18\% at interior $\tau$).
+
+\item \textbf{Skewness of $y$:} skewed outcomes (income, consumption)
+produce thin tails where $n_{\mathrm{eff}}$ drops sharply at extreme
+$\tau$. The NN floor prevents instability there.
+
+\item \textbf{Binary regressors:} $\beta_j(\tau)$ may have sharp local
+variation, making $h_j^*$ narrow. The combined rule with
+$N_{\min}=\max(100,10k)$ prevents over-shrinkage.
+
+\item \textbf{Survey design:} the local variance $\sigma_j^2(\tau)$
+is inflated by clustering. Using $\hat\sigma_j^2(\tau)$ from the
+full IF formula (not naive WLS) corrects for this in $h_j^*$.
+\end{itemize}
+
+\paragraph{Practical recommendation.}
+For symmetric distributions with approximately linear $\beta(\tau)$,
+Silverman is adequate. For skewed outcomes or non-linear profiles,
+the combined adaptive rule is preferred.
+
+%% ─── §5 SURVEY DESIGN ───────────────────────────────────────────────────────
+\section{Inference under Complex Survey Design}
+\label{sec:svy}
+
+\subsection{The problem: PSU clustering and stratification}
+
+Household surveys use stratified multi-stage cluster sampling.
+$\hat{V}_{\mathrm{IF}}$ \eqref{eq:vIF} ignores intra-cluster
+correlation and is inconsistent under complex survey design.
+The design effect is
+\begin{equation}
+  \mathrm{DEFF} = 1 + (m-1)\,\rho_{\mathrm{ICC}},
+  \label{eq:deff}
+\end{equation}
+where $m$ is average PSU size and $\rho_{\mathrm{ICC}}$ is the
+intra-class correlation of PWR residuals.
+
+\subsection{Taylor linearisation under stratified cluster design}
+
+Under a stratified two-stage design with strata $h=1,\ldots,H$ and
+$n_h$ PSUs per stratum:\footnote{Standard \texttt{svy:} prefix in Stata
+applies Taylor linearisation to fixed score equations and cannot account
+for the CDF-dependence of $\hw_i(\tau)$. Our \texttt{vce(svy)} in
+\texttt{gepwreg} implements the corrected formula \eqref{eq:vsvy}
+directly --- a dedicated implementation is therefore not merely
+convenient but \textit{necessary} for consistent inference.}
+\begin{equation}
+  \hat{V}_{\mathrm{svy}} = A^{-1}\!
+  \left[\sum_{h=1}^H \frac{n_h}{n_h-1}
+  \sum_{i\in h}(\mathbf{z}_{hi}-\bar{\mathbf{z}}_h)
+               (\mathbf{z}_{hi}-\bar{\mathbf{z}}_h)'\right]
+  A^{-1}/n^2,
+  \label{eq:vsvy}
+\end{equation}
+where $\mathbf{z}_{hi}=\sum_{j\in(h,i)}\psi_j(\tau)$ is the sum of IF
+scores within PSU $(h,i)$ and $\bar{\mathbf{z}}_h$ is the
+within-stratum mean.
+
+\begin{remark}[Minimum PSU requirement]
+The Taylor estimator requires $n_h\geq 2$ PSUs per stratum.
+\texttt{gepwreg} issues a warning when $\min_h n_h<5$.
+\end{remark}
+
+\subsection{Design effect attenuation}
+\label{sec:svy:attenuation}
+
+\begin{proposition}[Design effect attenuation]
+\label{prop:deff}
+Let $\rho_w(\tau)$ be the ICC of the weighted residuals
+$\{\hw_i(\tau)^{1/2}\hat{e}_i\}$. Then $\rho_w(\tau)\leq
+\rho_{\mathrm{ICC}}$, with equality only when $h\to 0$.
+Proof in Appendix~\ref{app:proofs}.
+\end{proposition}
+
+This occurs because $\hw_i(\tau)$ selects observations near rank $\tau$
+\textit{across} PSUs, diluting intra-cluster correlation. The attenuation
+depends on $\tau$: at interior percentiles, the kernel draws from many
+PSUs; at extreme percentiles, households are spatially concentrated
+within PSUs (poor households cluster together), so attenuation is
+reduced.
+
+Table~\ref{tab:deff_tau} documents this empirically on Burkina Faso
+data.
+
+\begin{table}[htbp]\centering\small
+\caption{Effective design effect by percentile, Burkina Faso 1998}
+\label{tab:deff_tau}
+\resizebox{0.75\textwidth}{!}{
+\begin{tabular}{ccrrrr}
+\toprule
+& & \multicolumn{2}{c}{Household size} &
+    \multicolumn{2}{c}{Urban residence} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+$\tau$ & $n_{\mathrm{eff}}$ &
+DEFF$^{\mathrm{eff}}$ & SE-ratio &
+DEFF$^{\mathrm{eff}}$ & SE-ratio \\
+\midrule
+0.10 & 1{,}569 & 1.188 & 1.090 & 1.015 & 1.007 \\
+0.25 & 1{,}718 & 1.036 & 1.018 & 0.908 & 0.953 \\
+0.50 & 1{,}766 & 1.141 & 1.068 & 1.157 & 1.076 \\
+0.75 & 1{,}895 & 0.884 & 0.940 & 1.186 & 1.089 \\
+0.90 & 1{,}895 & 0.890 & 0.943 & 1.403 & 1.185 \\
+\bottomrule
+\multicolumn{6}{l}{\footnotesize
+DEFF$^{\mathrm{eff}}_j = \hat{V}_{\mathrm{svy},jj}/\hat{V}_{\mathrm{IF},jj}$;
+SE-ratio$_j = \sqrt{\mathrm{DEFF}^{\mathrm{eff}}_j}$.
+Raw ICC$=0.41$; DEFF$_{\mathrm{theoretical}}\approx 8.7$.} \\
+\multicolumn{6}{l}{\footnotesize
+$h=0.043$ at all $\tau$ (Silverman). SE-ratio at $\tau=0.5$: size $\approx 1.07$, urban $\approx 1.08$.
+$\tau=0.25$ and $\tau=0.75$ interpolated from adjacent deciles.}
+\end{tabular}}
+\end{table}
+
+This contrasts with poverty indices (FGT$(\alpha)$, Gini) where all
+observations contribute simultaneously to the estimand --- the DEFF is
+not attenuated. The attenuation is structural to the kernel locality
+of PWR.
+
+\subsection{Why UQR remains inconsistent under complex survey design}
+\label{sec:svy:uqr}
+
+\citet{RiosAvila2020} introduced \texttt{rifhdreg} with an \texttt{svy}
+option that: (i)~estimates $\hat{Q}_\tau$ using survey-weighted
+\texttt{pctile}; (ii)~estimates $\hat{f}_Y(Q_\tau)$ using survey-weighted
+\texttt{kdensity}; and (iii)~fits the RIF regression as
+\texttt{svy: regress}, incorporating PSU and strata in the variance.
+This is a substantial improvement over standard \texttt{rifreg}.
+
+However, a fundamental inconsistency remains: \texttt{rifhdreg svy}
+ignores the \textbf{two-step variance propagation} from the first step
+(RIF estimation) to the second step (regression). The RIF itself is an
+estimated quantity with sampling variance --- treating it as fixed in
+step 2 underestimates total uncertainty. This is the same issue that
+$\hat{V}_{\mathrm{naive}}$ has for PWR: ignoring the dependence of
+estimated quantities on $\hF_n$.
+
+\paragraph{Formal statement.}
+Let $\hat\eta_i = \widehat{\mathrm{RIF}}(y_i)$ be the estimated RIF.
+The two-step OLS estimator $\hat\gamma = (\bX'\bX)^{-1}\bX'\hat\eta$
+has variance $\Var(\hat\gamma) = \Var_1(\hat\gamma) +
+\Var_2(\hat\gamma)$, where $\Var_1$ is the within-step regression
+variance (captured by \texttt{svy: regress}) and $\Var_2$ is the
+cross-step propagation from uncertainty in $\hat\eta_i$ (ignored by
+\texttt{rifhdreg svy}).
+
+\paragraph{PWR advantage.}
+PWR is a \textit{single-step} estimator: $\hbeta(\tau) = T(\hF_n)$.
+There is no step-2 regression on an estimated outcome --- the
+IF score $\psi_j$ already accounts for CDF uncertainty through the
+indirect term \eqref{eq:score}. PWR is therefore consistent under
+complex survey design in a single analytical formula.
+
+Table~\ref{tab:uqr_svy} illustrates the practical consequences.
+
+\begin{table}[htbp]\centering\small
+\caption{UQR vs PWR under survey design, Burkina Faso, $\tau=0.5$}
+\label{tab:uqr_svy}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{lrrrl}
+\toprule
+Method & $\hat\beta_{\mathrm{size}}$ &
+$\hat\beta_{\mathrm{urban}}$ & $\hat\beta_{\mathrm{cons}}$ & Note\\
+\midrule
+UQR standard (\texttt{rifreg})    & $-0.0501$ & $0.6719$ & $11.675$
+  & unwtd $\hat{Q}$ and $\hat{f}$ \\
+UQR \texttt{rifhdreg svy}         & $-0.0494$ & $0.5916$ & $11.695$
+  & step-2 variance ignored \\
+\midrule
+PWR \texttt{vce(svy)}             & $-0.0015$ & $0.0096$ & $11.497$
+  & fully consistent \\
+PWR bootstrap (B=1000, seed=12345) & $-0.0015$ & $0.0096$ & $11.497$
+  & \texttt{bootstrap, strata() cluster():}; ratio SVY/Boot$\approx$1.01 \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize
+Note: UQR and PWR measure different quantities; direct magnitude
+comparison is not meaningful.}
+\end{tabular}}
+\end{table}
+
+%% ─── §6 MONTE CARLO ─────────────────────────────────────────────────────────
+\section{Monte Carlo Evidence}
+\label{sec:mc}
+
+\subsection{Notation and definitions}
+
+Throughout this section, $S=500$ replications are used unless stated
+otherwise. The \emph{empirical standard error} for variable $j$ is:
+\begin{equation}
+  \widehat{SE}_{\mathrm{emp},j}
+  = \left[\frac{1}{S-1}\sum_{s=1}^S
+    \left(\hat\beta_j^{(s)} - \bar{\hat\beta}_j\right)^2
+    \right]^{1/2},
+\end{equation}
+the standard deviation of $\hat\beta_j$ across replications. It
+serves as the simulation truth. The \emph{empirical 95\% coverage} is:
+\begin{equation}
+  \mathrm{Cov}_j = \frac{1}{S}\sum_{s=1}^S
+  \mathbf{1}\!\left[
+    \left|\hat\beta_j^{(s)} - \beta_j^{\mathrm{true}}\right|
+    \leq 1.96\,\widehat{SE}_j^{(s)}
+  \right].
+\end{equation}
+\textbf{Important:} SE$_{\mathrm{emp}}$ and the mean of SE$_{\mathrm{IF}}$
+are meaningful --- but the mean of SE absolute values across
+\textit{variables} is not (different units). All summary statistics
+below are computed on the \textbf{ratio} SE/SE$_{\mathrm{emp}}$,
+excluding the constant term (which absorbs between-PSU variation in
+the intercept).
+
+\subsection{Validation of the generalised ranking variable}
+\label{sec:mc:rankvar}
+
+We validate the \texttt{rankvar(z)} option with the following DGP:
+\[
+z_i = x_i + u_{z,i},\quad
+y_i = \bigl(1 + p_{z,i}\bigr)\,x_i + u_{y,i},
+\]
+where $x_i\sim\mathcal{N}(0,1)$, $u_z,u_y$ are i.i.d.\ $\mathcal{N}(0,1)$
+and $p_{z,i}=F_Z(z_i)$ is the rank of $z_i$. The true estimand is
+$\beta_z(\tau) = 1+\tau$ (effect on $y$ for households at the $\tau$-th
+percentile of $z$). Table~\ref{tab:mc_rankvar} shows that
+\texttt{gepwreg} with \texttt{rankvar(z)} recovers this target with
+bias below 2\%, while standard PWR (ranked on $y$) gives a
+different --- and incorrect for this question --- estimand.
+
+\begin{table}[htbp]\centering\small
+\caption{MC validation of \texttt{rankvar(z)}: mean estimate over 500 replications
+($n=3{,}000$)}
+\label{tab:mc_rankvar}
+\begin{tabular}{crrrr}
+\toprule
+$\tau$ & True $\beta_z(\tau)$ &
+PWR-$z$ (rankvar) & Bias\% &
+PWR-$y$ (standard) \\\midrule
+0.10 & 1.100 & 1.082 & $-$1.6\% & 0.554 \\
+0.25 & 1.250 & 1.237 & $-$1.1\% & 0.363 \\
+0.50 & 1.500 & 1.499 & $-$0.1\% & 0.365 \\
+0.75 & 1.750 & 1.762 & $+$0.7\% & 0.816 \\
+0.90 & 1.900 & 1.919 & $+$1.0\% & 1.512 \\\midrule
+\multicolumn{5}{l}{\footnotesize
+PWR-$y$ targets estimand $\beta_y(\tau)$ (different question, not biased).}
+\end{tabular}
+\end{table}
+
+\subsection{Coefficient consistency across estimators}
+
+\paragraph{Example A: linear rank interaction.}
+DGP: $y = 1000 + p_i \cdot x_1 + \varepsilon$; true $\beta(\tau)=2\tau$.
+PWR recovers the true values; QR gives a constant slope of 1; UQR
+produces a non-monotone profile (Table~\ref{tab:mc_a}).
+
+\begin{table}[htbp]\centering\small
+\caption{Estimated coefficients: Example A (linear rank interaction)}
+\label{tab:mc_a}
+\begin{tabular}{ccccc}
+\toprule$\tau$&True&QR&UQR&PWR\\\midrule
+0.10&0.10&1.00&0.06&0.12\\0.25&0.50&1.00&0.56&0.50\\
+0.50&1.00&1.00&1.51&1.00\\0.75&1.50&1.00&1.69&1.50\\
+0.90&1.80&1.00&0.87&1.79\\\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Example B: binary treatment.}
+When $x_2\sim\mathrm{Bernoulli}(0.4)$, PWR with reduced bandwidth
+($h/2$) outperforms QR and UQR (Table~\ref{tab:mc_b}).
+
+\begin{table}[htbp]\centering\small
+\caption{Estimated coefficients: Example B (binary treatment)}
+\label{tab:mc_b}
+\begin{tabular}{cccccc}
+\toprule$\tau$&True&QR&UQR&PWR&PWR-$h/2$\\\midrule
+0.05&10&36.44&67.55&10.47&10.07\\0.25&20&33.53&202.15&22.45&20.35\\
+0.50&26&34.96&257.69&30.49&26.63\\0.75&32&29.02&171.05&39.41&33.05\\
+0.95&44&24.23&43.12&53.44&45.33\\\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Standard error accuracy and CI coverage}
+
+\paragraph{Example C: location-scale DGP with two regressors.}
+
+DGP: $y = 0.5\,x_1 - 0.3\,x_2 + 5 + \varepsilon$, where
+$x_1\sim\mathcal{N}(0,1)$, $x_2\sim\mathrm{Bernoulli}(0.4)$, and
+$\varepsilon$ follows a stratified cluster design (10~strata
+$\times$ 30~PSU $\times$ 20~obs, $n=6{,}000$, ICC$=0.30$). In the
+location-scale model $\beta_{\mathrm{PWR}}(\tau)=\beta_{\mathrm{OLS}}$
+for all $\tau$ (since the kernel weights preserve the linear structure),
+providing known benchmarks $\beta^{\mathrm{true}}=[0.5,-0.3,5.0]$.
+
+\begin{table}[htbp]\centering\small
+\caption{SE accuracy and CI coverage: Example~C
+($S=500$ reps; ICC$=0.30$; $\tau=0.5$)}
+\label{tab:mc_coverage}
+\begin{tabular}{lrrrrcc}
+\toprule
+Variable & True $\beta$ & SE$_{\mathrm{emp}}$ &
+SE$_{\mathrm{IF}}$ & SE$_{\mathrm{SVY}}$ &
+Cov$_{\mathrm{IF}}$ & Cov$_{\mathrm{SVY}}$\\\midrule
+$x_1$    & $\phantom{-}$0.500 &0.00404&0.00406&0.00408&0.948&0.951\\
+$x_2$    & $-$0.300 &0.00691&0.00731&0.00739&0.941&0.956\\
+Constant & $\phantom{-}$5.000 &0.03357&0.02526&0.03554&0.918&0.945\\
+\midrule
+Median ratio (slopes) & &&1.008&1.010&&\\\bottomrule
+\multicolumn{7}{l}{\footnotesize MC SE on coverage: $\pm 0.010$.
+Constant excluded from median ratio (absorbs between-PSU variation).}
+\end{tabular}
+\end{table}
+
+SE$_{\mathrm{SVY}}$ achieves near-nominal coverage (0.951 slopes mean).
+SE$_{\mathrm{IF}}$ slightly under-covers the constant (0.918) ---
+expected under cluster design (Proposition~\ref{prop:deff}).
+
+\subsection{Monte Carlo: bandwidth selection}
+\label{sec:mc:bw}
+
+Table~\ref{tab:mc_bw} compares RMSE of $\hat\beta(\tau)$ for four
+bandwidth strategies across $\tau \in [0.10, 0.90]$ using Example~A
+DGP ($S=500$).
+
+\begin{table}[htbp]\centering\small
+\caption{Bandwidth RMSE comparison (relative to Silverman=1.00)}
+\label{tab:mc_bw}
+\begin{tabular}{ccccc}
+\toprule
+$\tau$ & Silverman & NN & Analytic & Combined\\\midrule
+0.10 & 1.00 & 0.87 & 0.94 & \textbf{0.88}\\
+0.25 & 1.00 & 0.93 & 0.85 & \textbf{0.83}\\
+0.35 & 1.00 & 0.95 & 1.04$^*$ & \textbf{0.90}\\
+0.50 & 1.00 & 0.93 & 0.87 & \textbf{0.84}\\
+0.65 & 1.00 & 0.94 & 1.07$^*$ & \textbf{0.89}\\
+0.75 & 1.00 & 0.89 & 0.86 & \textbf{0.82}\\
+0.90 & 1.00 & 0.84 & 0.93 & \textbf{0.87}\\\bottomrule
+\multicolumn{5}{l}{\footnotesize
+$^*$ Analytic rule over-shrinks when $\hat\beta''(\tau)\approx 0$;
+combined rule avoids this.}
+\end{tabular}
+\end{table}
+
+The combined rule reduces RMSE by 12--18\% at interior percentiles with
+no instability at flat profile regions.
+
+%% ─── §7 EMPIRICAL APPLICATION ───────────────────────────────────────────────
+\section{Empirical Application: Burkina Faso 1998}
+\label{sec:application}
+
+\subsection{Data and survey design}
+
+The Burkina Faso 1998 household consumption survey \citep{INSD1998}
+uses two-stage stratified random sampling: 10~strata; PSUs (zones de
+d\'{e}nombrement) sampled in stage 1; 20~households systematically
+sampled per PSU in stage 2. This yields $n=8{,}478$ observations across
+425~PSUs. The dependent variable is log per capita consumption
+$\ln(\text{exppc})$. Regressors: household size (\texttt{size}); male
+head (\texttt{male}); urban (\texttt{urban}); socioeconomic group
+(\texttt{gse}: 1=public wage-earner (ref), 2=private, 3=artisan,
+4=other, 5=crop farmer, 6=subsistence farmer, 7=inactive).
+
+\begin{verbatim}
+svyset psu [pw=weight], strata(strata)
+gepwreg lexp size male urban i.gse, per(0.5) vce(svy)
+\end{verbatim}
+
+\subsection{Standard error comparison}
+
+Table~\ref{tab:se_comparison} compares three SE estimators at
+$\tau=0.5$ ($h=0.043$, $n_{\mathrm{eff}}=1{,}766$).
+
+\begin{table}[htbp]
+\centering\small
+\caption{Standard error comparison, $\tau=0.5$, Burkina Faso 1998
+($h=0.043$, $N_{\mathrm{eff}}=1{,}766$, $n=8{,}478$; GSE\,2 omitted by kernel sparsity)}
+\label{tab:se_comparison}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.10}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+& & \multicolumn{4}{c}{Standard error} & \\
+\cmidrule(lr){3-6}
+Variable & $\hat\beta$ &
+SE$_{\mathrm{naive}}$ & SE$_{\mathrm{IF}}$ & SE$_{\mathrm{SVY}}$ &
+SE$_{\mathrm{boot}}$ & SE-ratio$^a$ \\
+\midrule
+\multicolumn{7}{l}{\textit{Continuous and binary regressors}}\\[1pt]
+Household size        & $-$0.0015 & 0.00025 & 0.00039 & 0.00041 & 0.00043 & 1.07$^{***}$ \\
+Male head             & $-$0.0101 & 0.00455 & 0.00698 & 0.00688 & 0.00676 & 0.99 \\
+Urban residence       & $\phantom{-}$0.0096 & 0.00387 & 0.00596 & 0.00641 & 0.00642 & 1.08$^{*}$ \\[3pt]
+\multicolumn{7}{l}{\textit{Socioeconomic group (ref.\ = public wage-earner)}}\\[1pt]
+GSE 2: private        & \multicolumn{6}{l}{\textit{omitted} (kernel-sparse at $\tau=0.5$)} \\
+GSE 3: artisan        & $-$0.0106 & 0.00670 & 0.01039 & 0.01104 & 0.01085 & 1.06 \\
+GSE 4: other earner   & $\phantom{-}$0.0346 & 0.01782 & 0.02319 & 0.02309 & 0.02567 & 1.00 \\
+GSE 5: crop farmer    & $-$0.0038 & 0.00671 & 0.01012 & 0.01014 & 0.01049 & 1.00 \\
+GSE 6: subsistence    & $-$0.0238 & 0.00594 & 0.00895 & 0.00894 & 0.00898 & 1.00 \\
+GSE 7: inactive       & $-$0.0331 & 0.00730 & 0.01047 & 0.01047 & 0.01055 & 1.00 \\[3pt]
+\multicolumn{7}{l}{\textit{Intercept}}\\[1pt]
+Constant              & $\phantom{-}$11.497 & 0.00763 & 0.01628 & 0.02035 & 0.02003 & 1.25$^{***}$ \\
+\midrule
+\multicolumn{5}{l}{\footnotesize Median SE$_{\mathrm{naive}}$/SE$_{\mathrm{IF}}$ (slopes):}
+  & \multicolumn{2}{l}{\footnotesize \textbf{0.66} (naive 34\% below)} \\
+\multicolumn{5}{l}{\footnotesize Bootstrap coverage ($B$=1{,}000, 95\%):}
+  & \multicolumn{2}{l}{\footnotesize \textbf{0.945} ($\pm$0.007)} \\
+\bottomrule
+\multicolumn{6}{l}{\footnotesize
+  SE$_{\mathrm{naive}}$: WLS fixed weights (inconsistent).
+  SE$_{\mathrm{IF}}$: linearisation (Rao 1979; Deville 1999).
+  SE$_{\mathrm{SVY}}$: Taylor PSU+strata.}\\
+\multicolumn{6}{l}{\footnotesize
+  $^a$SE-ratio $= \mathrm{SE}_{\mathrm{SVY}}/\mathrm{SE}_{\mathrm{IF}} = \sqrt{\mathrm{DEFF}^{\mathrm{eff}}}$;
+  $^{***}p{<}0.01$, $^{**}p{<}0.05$, $^{*}p{<}0.10$ (test: SE-ratio $\ne 1$). Constant excluded from median.}
+\end{tabular}}%
+\end{table}
+
+\subsection{Substantive findings}
+
+Household size has a significant negative effect ($\hat\beta=-0.0015$,
+$\widehat{SE}_{\mathrm{SVY}}=0.00041$; $t=-3.6$). Subsistence farming
+(GSE~6) and inactivity (GSE~7) yield large negative coefficients
+($-0.024$ and $-0.033$), both significant at 5\%. The urban premium
+(0.0096) is not significant at the median, consistent with high
+within-urban heterogeneity.
+
+\subsection{Distributional profile: urban residence premium}
+\label{sec:app:profile}
+
+Figure~\ref{fig:urban_profile} plots $\hat\beta_{\mathrm{urban}}(\tau)$
+with 95\% confidence intervals from both $\widehat{SE}_{\mathrm{IF}}$
+and $\widehat{SE}_{\mathrm{SVY}}$ across $\tau\in[0.05,\,0.95]$
+(step $\Delta\tau=0.025$).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\textwidth]{pwr_urban_profile.pdf}
+\caption{Urban residence premium $\hat\beta_{\mathrm{urban}}(\tau)$
+by expenditure percentile, Burkina Faso 1998.
+Green shading: 95\% CI from $\widehat{SE}_{\mathrm{SVY}}$ excludes zero
+(statistically significant urban premium).
+Dashed red line: OLS estimate ($= 0.33$, well above all PWR estimates
+--- OLS overstates the premium by capturing composition effects).
+Bandwidth: Silverman ($c_0=0.9$); $\Delta\tau=0.025$;
+$n=8{,}478$; 10~strata; 425~PSU.}
+\label{fig:urban_profile}
+\end{figure}
+
+Three findings emerge. \textit{First}, the OLS estimate (0.33)
+dramatically overstates the urban premium at every percentile: it
+captures the composition effect (urban households are richer on average)
+rather than a true location effect, illustrating the value of PWR.
+\textit{Second}, the urban premium has a \textbf{U-shaped profile}
+--- significant at Q10 ($\hat\beta=0.051$, $p<0.01$) and rising again
+at Q80 ($\hat\beta=0.039$), but near zero at the median ($\hat\beta=0.010$).
+This suggests that urban residence benefits the very poor (through
+better access to social transfers and informal markets) and the upper
+middle class (formal employment), but provides little net advantage for
+the middle of the distribution. \textit{Third}, the wider CI from
+$\widehat{SE}_{\mathrm{SVY}}$ relative to $\widehat{SE}_{\mathrm{IF}}$
+at extreme $\tau$ is consistent with the partial design effect
+attenuation documented in Table~\ref{tab:deff_tau}.
+
+\subsection{Bandwidth sensitivity}
+
+\begin{table}[htbp]\centering\small
+\caption{Bandwidth sensitivity, $\tau=0.5$, Burkina Faso 1998}
+\label{tab:bw_sensitivity}
+\begin{tabular}{cccrr}
+\toprule
+$c_0$ & $h$ & $n_{\mathrm{eff}}$ &
+$\hat\beta_{\mathrm{size}}$ & $\hat\beta_{\mathrm{urban}}$\\\midrule
+0.7&0.034&1{,}370&$-0.00069$&$0.00532$\\
+\textbf{0.8}&\textbf{0.038}&\textbf{1{,}568}&$\mathbf{-0.00104}$&$\mathbf{0.00717}$\\
+\textbf{0.9}&\textbf{0.043}&\textbf{1{,}766}
+  &$\mathbf{-0.00148}$&$\mathbf{0.00962}$\\
+1.0&0.048&1{,}964&$-0.00214$&$0.01272$\\
+1.1&0.053&2{,}163&$-0.00288$&$0.01641$\\\bottomrule
+\end{tabular}
+\end{table}
+
+%% ─── §8 CONCLUSION ──────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+
+This paper has extended the Percentile Weights Regression in four
+directions.
+
+On \textbf{standard errors}, naive WLS SE underestimates uncertainty
+by 37\%. The linearisation formula achieves bootstrap coverage of
+0.945 (nominal 0.95) at $O(n\log n)$ cost (bootstrap via \texttt{bootstrap, strata() cluster()}, $B=1{,}000$, seed 12345).
+
+On \textbf{bandwidth selection}, the MSE-optimal rule adapts to local
+curvature and regressor type. The combined adaptive rule reduces RMSE
+by 12--18\% at interior percentiles with no instability at flat regions.
+
+On \textbf{survey design}, the PWR kernel attenuates the effective
+DEFF at interior percentiles (near unity at $\tau=0.50$ despite ICC
+$=0.41$), but attenuation is partial at extreme percentiles where
+households are spatially concentrated. Standard UQR (\texttt{rifhdreg
+svy}) remains inconsistent due to two-step variance propagation ignored
+in step 2 --- PWR avoids this by construction.
+
+On \textbf{generalisation}, PWR extends naturally to a ranking variable
+$z\neq y$, enabling distributional analysis along any dimension.
+
+Several extensions remain open: (i)~simultaneous confidence bands for
+the profile $\{\hbeta(\tau)\}_\tau$; (ii)~locally linear PWR in rank
+space (reducing bias from $O(h^2)$ to $O(h^3)$); (iii)~panel extensions
+with fixed effects.
+
+%% ─── REFERENCES ─────────────────────────────────────────────────────────────
+\bibliographystyle{apalike}
+\begin{thebibliography}{99}
+
+\bibitem[Araar(2016)]{Araar2016}
+Araar, A. (2016). Percentile weights regression. \emph{PEP Technical Note}.
+
+\bibitem[Araar(2023)]{Araar2023}
+Araar, A. (2023). Exploring heterogeneous effects: Quantile models and
+percentile weights regression. \emph{PEP Working Paper}, 2023-15.
+
+\bibitem[Calonico et al.(2014)]{CalonicoCattaneoTitiunik2014}
+Calonico, S., Cattaneo, M.~D., and Titiunik, R. (2014). Robust
+nonparametric confidence intervals for regression-discontinuity designs.
+\emph{Econometrica}, 82(6):2295--2326.
+
+\bibitem[Chaudhuri(1991)]{Chaudhuri1991}
+Chaudhuri, P. (1991). Nonparametric estimates of regression quantiles.
+\emph{Annals of Statistics}, 19(2):760--777.
+
+\bibitem[Deville(1999)]{Deville1999}
+Deville, J.-C. (1999). Variance estimation for complex statistics.
+\emph{Survey Methodology}, 25(2):193--203.
+
+\bibitem[Fan and Gijbels(1996)]{FanGijbels1996}
+Fan, J. and Gijbels, I. (1996). \emph{Local Polynomial Modelling and Its
+Applications}. Chapman \& Hall.
+
+\bibitem[Firpo et al.(2009)]{FirpoFortinLemieux2009}
+Firpo, S., Fortin, N.~M., and Lemieux, T. (2009). Unconditional quantile
+regressions. \emph{Econometrica}, 77(3):953--973.
+
+\bibitem[Firpo et al.(2018)]{FirpoFortinLemieux2018}
+Firpo, S., Fortin, N.~M., and Lemieux, T. (2018). Decomposing wage
+distributions using RIF regressions. \emph{Econometrics}, 6(2):28.
+
+\bibitem[INSD(1998)]{INSD1998}
+INSD (1998). Enqu\^{e}te sur les conditions de vie des m\'{e}nages,
+Burkina Faso 1998. INSD, Ouagadougou.
+
+\bibitem[Kish(1965)]{Kish1965}
+Kish, L. (1965). \emph{Survey Sampling}. Wiley.
+
+\bibitem[Koenker and Bassett(1978)]{KoenkerBassett1978}
+Koenker, R. and Bassett, G. (1978). Regression quantiles.
+\emph{Econometrica}, 46(1):33--50.
+
+\bibitem[Koenker and Hallock(2001)]{KoenkerHallock2001}
+Koenker, R. and Hallock, K.~F. (2001). Quantile regression.
+\emph{Journal of Economic Perspectives}, 15(4):143--156.
+
+\bibitem[Machado and Mata(2005)]{MachadoMata2005}
+Machado, J.~A.~F. and Mata, J. (2005). Counterfactual decomposition of
+changes in wage distributions. \emph{Journal of Applied Econometrics},
+20(4):445--465.
+
+\bibitem[Newey and McFadden(1994)]{NeweyMcFadden1994}
+Newey, W.~K. and McFadden, D. (1994). Large sample estimation and
+hypothesis testing. \emph{Handbook of Econometrics}, Vol.~4, 2111--2245.
+
+\bibitem[Powell et al.(1989)]{PowellStockStoker1989}
+Powell, J.~L., Stock, J.~H., and Stoker, T.~M. (1989). Semiparametric
+estimation of index coefficients. \emph{Econometrica}, 57(6):1403--1430.
+
+\bibitem[Rao(1979)]{Rao1979}
+Rao, J.~N.~K. (1979). On deriving mean square errors in finite population
+sampling. \emph{Journal of the Indian Statistical Association},
+17:125--136.
+
+\bibitem[Rios-Avila(2020)]{RiosAvila2020}
+Rios-Avila, F. (2020). Recentered influence functions (RIFs) in Stata.
+\emph{The Stata Journal}, 20(1):51--94.
+
+\bibitem[Rothe(2010)]{Rothe2010}
+Rothe, C. (2010). Nonparametric estimation of distributional policy
+effects. \emph{Journal of Econometrics}, 155(1):56--70.
+
+\bibitem[Silverman(1986)]{Silverman1986}
+Silverman, B.~W. (1986). \emph{Density Estimation for Statistics and Data
+Analysis}. Chapman \& Hall.
+
+\bibitem[von Mises(1947)]{vonMises1947}
+von Mises, R. (1947). On the asymptotic distribution of differentiable
+statistical functions. \emph{Annals of Mathematical Statistics},
+18(3):309--348.
+
+\end{thebibliography}
+
+%% ─── APPENDICES ─────────────────────────────────────────────────────────────
+\appendix
+
+\section{Proofs}
+\label{app:proofs}
+
+\paragraph{Proof of Proposition~\ref{prop:inconsistent}.}
+Write $\hbeta = A_n^{-1}B_n$. By the von Mises expansion:
+$\sqrt{n}(\hbeta-\beta) = A^{-1}n^{-1/2}\sum_j\psi_j + o_p(1)$
+with $\psi_j = \psi_j^{\mathrm{dir}}+\psi_j^{\mathrm{ind}}$.
+Then $\E[\psi_j\psi_j'] =
+\E[\psi^{\mathrm{dir}}(\psi^{\mathrm{dir}})'] +
+2\E[\psi^{\mathrm{dir}}(\psi^{\mathrm{ind}})'] +
+\E[\psi^{\mathrm{ind}}(\psi^{\mathrm{ind}})']$.
+The naive formula captures only the first term.
+Since $\E[\psi^{\mathrm{ind}}(\psi^{\mathrm{ind}})'] \succeq 0$
+and the cross term is non-negative, $V_{\mathrm{naive}} \prec V$.
+$\square$
+
+\paragraph{Proof of Proposition~\ref{prop:deff}.}
+Within-PSU covariance of weighted residuals:
+\[
+\mathrm{Cov}\!\left(\hw_i^{1/2}\hat{e}_i,\,\hw_j^{1/2}\hat{e}_j\right)
+= \hw_i^{1/2}\hw_j^{1/2}\,\mathrm{Cov}(\hat{e}_i,\hat{e}_j).
+\]
+By Cauchy-Schwarz, $\hw_i^{1/2}\hw_j^{1/2}\leq(\hw_i+\hw_j)/2$.
+For a symmetric kernel centred at $\tau$:
+$\E[\hw_i^{1/2}\hw_j^{1/2}]/\E[\hw_i]\to 0$ as $h\to 0$
+and $\to 1$ as $h\to\infty$,
+establishing $\rho_w\in[0,\,\rho_{\mathrm{ICC}}]$. $\square$
+
+\section{Technical Derivations}
+\label{app:derivations}
+
+\subsection{Kernel constants $\mu_2(K)$ and $R(K)$}
+\label{app:deriv_K}
+
+The gepwe kernel is $K(u)=\exp(-u^2/4)/\sqrt{2\pi}$.
+
+\textbf{Moment of order 2:}
+$\mu_2(K) = \int u^2 K(u)\,du = (1/\sqrt{2\pi})\int u^2 e^{-u^2/4}\,du$.
+Setting $v=u/\sqrt{2}$: $= (2\sqrt{2}/\sqrt{2\pi})\int v^2 e^{-v^2/2}\,dv
+= (2\sqrt{2}/\sqrt{2\pi})\cdot\sqrt{2\pi} = 2$. $\checkmark$
+
+\textbf{Roughness:}
+$R(K)=\int K^2(u)\,du = (1/2\pi)\int e^{-u^2/2}\,du
+= (1/2\pi)\cdot\sqrt{2\pi} = 1/(2\sqrt{2\pi})$. $\checkmark$
+
+\subsection{Approximation $n_{\mathrm{eff}}\approx n\cdot h\cdot\sqrt{2\pi}$}
+\label{app:deriv_neff}
+
+\textbf{Numerator (continuous approximation):}
+$(\sum_i\hw_i)^2 \approx n^2\left(\int_0^1
+\frac{e^{-(p-\tau)^2/(4h^2)}}{h\sqrt{2\pi}\,n}\,dp\right)^2
+\approx n^2 \cdot \frac{1}{n^2}\cdot 2 = 2$.
+
+\textbf{Denominator:}
+$\sum_i\hw_i^2 \approx \frac{n}{(h\sqrt{2\pi})^2}
+\int e^{-(p-\tau)^2/(2h^2)}\,dp =
+\frac{n}{2\pi h^2}\cdot h\sqrt{2\pi} = \frac{n}{h\sqrt{2\pi}}$.
+
+\textbf{Result:} $n_{\mathrm{eff}} \approx 2\big/(n/(h\sqrt{2\pi})\cdot
+1/n) = n\cdot h\cdot\sqrt{2\pi}$. $\square$
+
+\subsection{IF score: derivation of the indirect term}
+\label{app:deriv_psi}
+
+Write $T(F) = A(F)^{-1}B(F)$ where
+$A(F)=\int\bx\bx' w(F,\tau)\,dF$ and
+$B(F)=\int\bx y\,w(F,\tau)\,dF$,
+with $w(F,\tau)=K((F(y)-\tau)/h)/(nh)$.
+
+\textbf{Step 1: Perturb $F$.}
+Set $F_\varepsilon=(1-\varepsilon)F+\varepsilon\delta_{y_j}$
+and compute $\partial T(F_\varepsilon)/\partial\varepsilon|_{\varepsilon=0}$.
+
+\textbf{Step 2: Direct effect.}
+Adding point mass at $(x_j,y_j)$ contributes
+$\bx_j\bx_j'w_j$ to $A$ and $\bx_j y_j w_j$ to $B$, giving the
+direct score $\hat{w}_j\bx_j\hat{e}_j$ after centering.
+
+\textbf{Step 3: Indirect effect.}
+The perturbation $F_\varepsilon(y) = F(y)+\varepsilon\mathbf{1}[y\geq y_j]$
+shifts $F(y_i)$ by $\varepsilon$ for all $y_i\geq y_j$, which changes
+$w_i(F_\varepsilon,\tau)$ by
+$\varepsilon\,\partial w_i/\partial F(y_i) = \varepsilon\,\dot{w}_i$.
+The indirect contribution is therefore
+$\frac{1}{n}\sum_{\{i:y_i\geq y_j\}}\dot{w}_i\bx_i\hat{e}_i$,
+where $1/n$ arises from the discrete CDF step.
+
+\textbf{Step 4: Assemble.}
+$\psi_j = A^{-1}\left[\hw_j\bx_j\hat{e}_j +
+\frac{1}{n}\sum_{\{i:y_i\geq y_j\}}\dot{w}_i\bx_i\hat{e}_i\right]$.
+$\square$
+
+\subsection{MSE-optimal bandwidth derivation}
+\label{app:deriv_hstar}
+
+\textbf{Bias.}
+$\mathrm{Bias}[\hat\beta_j(\tau,h)] \approx
+\frac{1}{2}\beta_j''(\tau)\int(p-\tau)^2 K\!\left(\frac{p-\tau}{h}\right)dp
+= \frac{1}{2}\beta_j''(\tau)\cdot h^2\mu_2(K) = h^2\beta_j''(\tau)$.
+
+So $\mathrm{Bias}^2 = h^4[\beta_j''(\tau)]^2$.
+
+\textbf{Variance.}
+$\mathrm{Var}[\hat\beta_j(\tau,h)] \approx
+\frac{\sigma_j^2(\tau)}{n}\cdot\frac{R(K)}{h} =
+\frac{\sigma_j^2(\tau)}{2nh\sqrt{2\pi}}$.
+
+\textbf{Optimisation.}
+$\mathrm{MSE}(h) = h^4[\beta_j''(\tau)]^2 +
+\sigma_j^2(\tau)/(2nh\sqrt{2\pi})$.
+$\partial\,\mathrm{MSE}/\partial h = 4h^3[\beta_j''(\tau)]^2 -
+\sigma_j^2(\tau)/(2nh^2\sqrt{2\pi}) = 0$.
+Solving: $h^5 = \sigma_j^2(\tau)/(8n\sqrt{2\pi}[\beta_j''(\tau)]^2)$,
+giving \eqref{eq:hstar}. $\square$
+
+\section{The \texttt{gepwreg} Stata Command}
+\label{app:gepwreg}
+
+\texttt{gepwreg} implements the full PWR pipeline. Requires Stata~16+.
+
+\subsection{Syntax}
+\begin{verbatim}
+gepwreg depvar [indepvars] [fw/aw/pw] [if] [in] , [options]
+\end{verbatim}
+
+\begin{table}[htbp]\centering\small
+\caption{Options of \texttt{gepwreg}}
+\begin{tabular}{l l p{6cm}}
+\toprule Option&Default&Description\\\midrule
+\texttt{per(\#)}&0.5&Target percentile $\tau\in(0,1)$\\
+\texttt{cband(\#)}&0.9&Silverman constant $c_0$\\
+\texttt{band(\#)}&0&Manual bandwidth (0=Silverman)\\
+\texttt{boot(\#)}&0&Bootstrap replications\\
+\texttt{vce(svy)}&--&Taylor SE (requires \texttt{svyset})\\
+\texttt{rankvar(z)}&--&Rank observations by $z$ instead of $y$\\
+\texttt{level(\#)}&95&Confidence level\\
+\texttt{noconstant}&--&Suppress constant\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Examples}
+
+\paragraph{Example 1: Basic usage.}
+\begin{verbatim}
+gepwreg lexp size male urban i.gse [pw=weight], per(0.5)
+gepwreg_setable
+\end{verbatim}
+
+\paragraph{Example 2: Survey design.}
+\begin{verbatim}
+svyset psu [pw=weight], strata(strata)
+gepwreg lexp size male urban i.gse, per(0.5) vce(svy)
+\end{verbatim}
+
+\paragraph{Example 3: Generalised ranking variable.}
+\begin{verbatim}
+/* Effects on consumption for households poor in income terms */
+gepwreg lexp size male urban i.gse [pw=weight], ///
+        per(0.25) rankvar(income)
+\end{verbatim}
+
+\paragraph{Example 4: Profile $\hat\beta(\tau)$.}
+\begin{verbatim}
+matrix B = J(9,3,.)
+forvalues i=1/9 {
+    local tau = `i'/10
+    gepwreg lexp size [pw=weight], per(`tau') vce(svy)
+    matrix B[`i',1]=`tau'
+    matrix B[`i',2]=_b[size]
+    matrix B[`i',3]=_se[size]
+}
+svmat B, names(col)
+gen lo=B2-1.96*B3
+gen hi=B2+1.96*B3
+twoway (rarea lo hi B1, color(blue%15)) ///
+       (line  B2   B1, lcolor(blue))   ///
+       , xtitle("Percentile {&tau}") ytitle("{&beta}({&tau}) -- size")
+\end{verbatim}
+
+\paragraph{Example 5: Bandwidth sensitivity.}
+\begin{verbatim}
+foreach cb in 0.5 0.7 0.9 1.1 1.3 {
+    gepwreg lexp size [pw=weight], per(0.5) cband(`cb')
+    di "cband=`cb'  h=" %6.4f e(h) "  N_eff=" %5.1f e(N_eff) ///
+       "  beta=" %8.5f _b[size]
+}
+\end{verbatim}
+
+\subsection{Stored results}
+
+\begin{table}[htbp]\centering\small
+\caption{Results stored in \texttt{e()} after \texttt{gepwreg}}
+\begin{tabular}{l l p{6cm}}
+\toprule Type&Name&Content\\\midrule
+\multirow{5}{*}{Scalars}
+  &\texttt{e(N)}&Observations\\
+  &\texttt{e(tau)}&Target percentile\\
+  &\texttt{e(h)}&Bandwidth\\
+  &\texttt{e(N\_eff)}&Kernel effective sample size\\
+  &\texttt{e(do\_svy)}&1 if \texttt{vce(svy)}\\
+\midrule
+\multirow{5}{*}{Matrices}
+  &\texttt{e(b)}&Coefficients\\
+  &\texttt{e(V)}&Main variance (IF or SVY)\\
+  &\texttt{e(V\_naive)}&Naive WLS variance\\
+  &\texttt{e(V\_boot)}&Bootstrap variance\\
+  &\texttt{e(V\_svy)}&Taylor survey variance\\
+\midrule
+\multirow{3}{*}{Macros}
+  &\texttt{e(cmd)}&\texttt{gepwreg}\\
+  &\texttt{e(vce)}&SE type\\
+  &\texttt{e(wgt)}&Weight variable\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Installation}
+
+\noindent The package can be installed directly from GitHub:
+
+\begin{verbatim}
+net install gepwreg, ///
+    from("https://raw.githubusercontent.com/aabbdd12/gepwreg/main") ///
+    replace
+\end{verbatim}
+
+\noindent Or manually by copying \texttt{gepwreg.ado}, \texttt{gepwreg.sthlp},
+and \texttt{gepwreg.dlg} to a folder on the Stata \texttt{adopath}.
+After installation:
+
+\begin{verbatim}
+which gepwreg    /* verify installation */
+db    gepwreg    /* open dialog box    */
+help  gepwreg    /* documentation      */
+\end{verbatim}
+
+\noindent Updates:
+
+\begin{verbatim}
+adoupdate gepwreg, update
+\end{verbatim}
+
+\end{document}

@@ -1,7 +1,7 @@
 {smcl}
-{* *! gepwreg.sthlp  v1.0  Araar A.  2024}{...}
+{* *! gepwreg.sthlp  v1.3.1  16sep2026  Araar A.}{...}
 {vieweralsosee "qreg" "help qreg"}{...}
-{vieweralsosee "rifreg" "help rifreg"}{...}
+{vieweralsosee "rifhdreg" "help rifhdreg"}{...}
 {vieweralsosee "gepwe" "help gepwe"}{...}
 {viewerjumpto "Syntax" "gepwreg##syntax"}{...}
 {viewerjumpto "Description" "gepwreg##description"}{...}
@@ -57,9 +57,16 @@ standard errors
 {help weight}.{p_end}
 
 {phang}
-After estimation, {cmd:gepwreg_setable} displays a comparison of naive,
-IF-corrected, and bootstrap SE. The {cmd:boot(B)} option (command line only)
-is required for bootstrap SE.
+The post-estimation command
+
+{p 8 17 2}
+{cmd:gepwreg_setable}
+
+{phang}
+typed after {cmd:gepwreg}, displays the naive, IF-corrected and bootstrap
+standard errors of the last estimation side by side, and notes when a Taylor
+(survey) variance is also stored.  The {cmd:boot(#)} option (command line
+only) is required for the bootstrap column.
 
 {hline}
 {marker description}{...}
@@ -79,7 +86,7 @@ target percentile {it:tau}:
 Unlike conditional quantile regression ({help qreg}), the percentile
 ranking is based on the {it:dependent variable} rather than the predicted
 component. Unlike unconditional quantile regression
-({help rifreg}), the coefficient measures a local slope rather than a
+({help rifhdreg}), the coefficient measures a local slope rather than a
 marginal location shift.
 
 {pstd}
@@ -347,45 +354,62 @@ diagnostic: values below 50 suggest the bandwidth may be too narrow.
 {marker examples}{...}
 {title:Examples}
 
-{pstd}{ul:Basic usage}{p_end}
+{pstd}
+The examples use {cmd:bkf98I.dta}, the Burkina Faso 1998 household survey
+extract distributed with the package ({cmd:net get gepwreg}): 8,478
+households in 10 strata and 425 primary sampling units, sampling weight
+{cmd:weight}.  The outcome is log per capita expenditure; a male-head and an
+urban indicator are built from the labelled variables.{p_end}
 
-{phang2}{cmd:. use data.dta}{p_end}
-{phang2}{cmd:. gen fw = hhsize * wta_hh}{p_end}
-{phang2}{cmd:. gen lexp = log(pcexp)}{p_end}
+{pstd}{ul:Setup}{p_end}
 
-{phang2}{cmd:. gepwreg lexp i.hhedlevel hhagey hhsize i.hhsex i.rururb [fw=fw], per(0.5)}{p_end}
+{phang2}{cmd:. use bkf98I, clear}{p_end}
+{phang2}{cmd:. generate lexp  = ln(exppc)}{p_end}
+{phang2}{cmd:. generate male  = (sex == 1)}{p_end}
+{phang2}{cmd:. generate urban = (zone == 2)}{p_end}
 
-{pstd}{ul:Compare with OLS and quantile regression}{p_end}
+{pstd}{ul:Weighted estimation at the median, IF-corrected standard errors}{p_end}
 
-{phang2}{cmd:. gepwreg  lexp i.hhedlevel hhagey hhsize [fw=fw], per(0.5)}{p_end}
-{phang2}{cmd:. eststo pwr50}{p_end}
-{phang2}{cmd:. qreg   lexp i.hhedlevel hhagey hhsize [fw=fw], quantile(0.5)}{p_end}
-{phang2}{cmd:. eststo qr50}{p_end}
-{phang2}{cmd:. esttab pwr50 qr50}{p_end}
+{phang2}{cmd:. gepwreg lexp size male urban i.gse [pw=weight], per(0.5)}{p_end}
 
-{pstd}{ul:Multiple percentiles}{p_end}
+{pstd}{ul:Survey design: Taylor linearisation is used automatically once svyset}{p_end}
+
+{phang2}{cmd:. svyset psu [pw=weight], strata(strata)}{p_end}
+{phang2}{cmd:. gepwreg lexp size male urban i.gse, per(0.5)}{p_end}
+{phang2}{cmd:. gepwreg lexp size male urban i.gse, per(0.5) vce(svy)}{p_end}
+
+{pstd}{ul:Compare with conditional and unconditional quantile regression}{p_end}
+
+{phang2}{cmd:. gepwreg lexp size male urban i.gse [pw=weight], per(0.5)}{p_end}
+{phang2}{cmd:. estimates store pwr50}{p_end}
+{phang2}{cmd:. qreg lexp size male urban i.gse [pw=weight], quantile(0.5)}{p_end}
+{phang2}{cmd:. estimates store qr50}{p_end}
+{phang2}{cmd:. rifhdreg lexp size male urban i.gse [pw=weight], rif(q(50))}{p_end}
+{phang2}{cmd:. estimates store uqr50}{p_end}
+{phang2}{cmd:. estimates table pwr50 qr50 uqr50, se}{p_end}
+
+{pstd}{ul:A profile across percentiles}{p_end}
 
 {phang2}{cmd:. foreach tau in 0.10 0.25 0.50 0.75 0.90 {c -(}}{p_end}
-{phang2}{cmd:.     gepwreg lexp hhagey hhsize [fw=fw], per(`tau')}{p_end}
-{phang2}{cmd:.     eststo pwr`=100*`tau''}{p_end}
+{phang2}{cmd:.     gepwreg lexp size male urban i.gse [pw=weight], per(`tau')}{p_end}
+{phang2}{cmd:.     estimates store pwr`=100*`tau''}{p_end}
 {phang2}{cmd:. {c )-}}{p_end}
-{phang2}{cmd:. esttab pwr10 pwr25 pwr50 pwr75 pwr90}{p_end}
+{phang2}{cmd:. estimates table pwr10 pwr25 pwr50 pwr75 pwr90, se}{p_end}
 
-{pstd}{ul:With bootstrap validation}{p_end}
+{pstd}{ul:Ranking on another variable than the outcome}{p_end}
 
-{phang2}{cmd:. gepwreg lexp i.hhedlevel hhagey hhsize [fw=fw], per(0.5) boot(1000)}{p_end}
-{phang2}{cmd:. gepwreg_setable}{p_end}
+{phang2}{cmd:. gepwreg lexp size male urban i.gse [pw=weight], per(0.25) rankvar(size)}{p_end}
 
 {pstd}{ul:Bandwidth choice (MSE-optimal is the default)}{p_end}
 
-{phang2}{cmd:. gepwreg lexp hhagey hhsize [fw=fw], per(0.5)}             (MSE-optimal, default){p_end}
-{phang2}{cmd:. gepwreg lexp hhagey hhsize [fw=fw], per(0.5) silverman}  (Silverman rule){p_end}
-{phang2}{cmd:. gepwreg lexp hhagey hhsize [fw=fw], per(0.5) band(0.04)} (manual fixed){p_end}
-{phang2}{cmd:. di "h = " e(h) "  method = " e(bw_method) "  N_eff = " e(N_eff)}{p_end}
+{phang2}{cmd:. gepwreg lexp size [pw=weight], per(0.5)}{p_end}
+{phang2}{cmd:. gepwreg lexp size [pw=weight], per(0.5) silverman}{p_end}
+{phang2}{cmd:. gepwreg lexp size [pw=weight], per(0.5) band(0.04)}{p_end}
+{phang2}{cmd:. display "h = " e(h) "  method = " e(bw_method) "  N_eff = " e(N_eff)}{p_end}
 
-{pstd}{ul:SE comparison table}{p_end}
+{pstd}{ul:Bootstrap validation of the analytical standard errors}{p_end}
 
-{phang2}{cmd:. gepwreg lexp i.hhedlevel hhagey hhsize [fw=fw], per(0.5) boot(500)}{p_end}
+{phang2}{cmd:. gepwreg lexp size male urban i.gse [pw=weight], per(0.5) boot(500)}{p_end}
 {phang2}{cmd:. gepwreg_setable}{p_end}
 
 {hline}
@@ -400,6 +424,15 @@ Université Laval.
 {phang}
 Araar, A. (2023). Exploring heterogeneous effects: Quantile models and
 percentile weights regression. {it:PEP Working Paper Series}, 2023-15.
+
+{phang}
+Araar, A. (2026). Exploring heterogeneous effects: Quantile models and
+percentile weights regression -- analytical standard errors, MSE-optimal
+bandwidth, and inference under complex survey design.  Zenodo,
+{browse "https://doi.org/10.5281/zenodo.20315684":10.5281/zenodo.20315684}.
+The reference for the standard errors, the bandwidth rule and the survey
+design variance implemented in this version, and the paper to cite for the
+command.
 
 {phang}
 Deville, J.-C. (1999). Variance estimation for complex statistics and
@@ -434,8 +467,9 @@ Chapman & Hall, London.
 
 {pstd}
 Abdelkrim Araar{break}
-Université Laval, Québec, Canada{break}
-{browse "mailto:aabd@ecn.ulaval.ca":aabd@ecn.ulaval.ca}
+Université Laval and Partnership for Economic Policy (PEP), Québec, Canada{break}
+{browse "mailto:aabd@ecn.ulaval.ca":aabd@ecn.ulaval.ca}{break}
+Package: {browse "https://github.com/aabbdd12/gepwreg"}
 
 {hline}
 {title:Also see}
@@ -443,7 +477,7 @@ Université Laval, Québec, Canada{break}
 {psee}
 {helpb qreg}: Quantile regression{p_end}
 {psee}
-{helpb rifreg}: RIF regression (UQR){p_end}
+{helpb rifhdreg}: RIF regression (UQR), Rios-Avila (2020){p_end}
 {psee}
 {helpb gepwe}: Generate percentile kernel weights{p_end}
 {psee}
