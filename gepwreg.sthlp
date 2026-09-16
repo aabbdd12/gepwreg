@@ -1,5 +1,5 @@
 {smcl}
-{* *! gepwreg.sthlp  v1.3.1  16sep2026  Araar A.}{...}
+{* *! gepwreg.sthlp  v1.4.0  16sep2026  Araar A.}{...}
 {vieweralsosee "qreg" "help qreg"}{...}
 {vieweralsosee "rifhdreg" "help rifhdreg"}{...}
 {vieweralsosee "gepwe" "help gepwe"}{...}
@@ -54,7 +54,12 @@ standard errors
 
 {phang}
 {cmd:fweight}s, {cmd:aweight}s, and {cmd:pweight}s are allowed; see
-{help weight}.{p_end}
+{help weight}.  {it:indepvars} may contain factor variables; see
+{help fvvarlist}.  Base levels are carried in {cmd:e(b)} as zero entries and
+hidden in the table, as in Stata's own estimation commands, so that
+{helpb estimates table} lines the levels up across commands.  A level whose
+indicator is identically zero within the kernel neighbourhood of {it:tau}
+is reported as omitted.{p_end}
 
 {phang}
 The post-estimation command
@@ -461,6 +466,22 @@ RIF regression and RIF decomposition.
 Silverman, B. W. (1986).
 {it:Density Estimation for Statistics and Data Analysis}.
 Chapman & Hall, London.
+
+{hline}
+{title:Version history}
+
+{phang}
+1.4.0 (September 2026).  Factor variables: every non-base level now gets its
+own indicator.  Up to 1.3, the second level of a factor variable was pooled
+with the base level and reported as omitted, so the coefficients on the other
+levels were relative to the two pooled levels; continuous and binary
+regressors were unaffected.  Base levels are carried in {cmd:e(b)}.
+{cmd:gepwreg_setable} is a separate file.
+
+{phang}
+1.3 (May 2026).  MSE-optimal bandwidth as the default ({cmd:silverman} to
+revert), Taylor linearisation under {cmd:svyset}, ties in the ranking
+variable given the same rank, {cmd:rankvar()}.
 
 {hline}
 {title:Author}

@@ -1,7 +1,11 @@
-*! gepwreg.ado  v1.3.1  16sep2026  Araar A.  (MSE-optimal bandwidth is the default; use silverman to revert)
-*! 1.3.1 (16sep2026): gepwreg_setable moved to its own file, so that it loads as a
-*! post-estimation command; help examples on the distributed data; references and
-*! package file.  The estimator is unchanged since 1.3 (12may2026).
+*! gepwreg.ado  v1.4.0  16sep2026  Araar A.  (MSE-optimal bandwidth is the default; use silverman to revert)
+*! 1.4.0 (16sep2026): factor variables -- every non-base level now gets its own
+*! indicator.  Up to 1.3.1 the second level of a factor variable was pooled with
+*! the base and reported as omitted (a column of zeros from fvrevar), so the
+*! coefficients on the other levels were relative to the two pooled levels.
+*! Continuous and binary regressors are unaffected.
+*! 1.3.1 (16sep2026): gepwreg_setable in its own file; help examples on the
+*! distributed data; references and package file.
 *! Percentile Weights Regression
 *! Araar (2016, 2023) ; Deville (1999) ; Newey & McFadden (1994)
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -41,29 +45,41 @@ if r(N) == 0 error 2000 ;
 local depvar    : word 1 of `varlist' ;
 local indepvars : list varlist - depvar ;
 
-/* Step 1 : fvexpand then filter base (Nb.) and omitted (No.) categories
-   0b.rururb → removed    1.rururb → kept
-   This gives the display names AND the clean list for fvrevar             */
+/* Step 1 : fvexpand, then create the temporary variables from the FULL
+   expanded list, base levels included.  (1.4) Passing only the non-base
+   levels to fvrevar -- 2.gse 3.gse ... 7.gse -- makes Stata take the lowest
+   listed level as the base of that set, so its indicator came out as a
+   column of zeros: level 2 was silently pooled with level 1 and reported as
+   "omitted".  With 1b.gse in the list every level keeps its own indicator;
+   the base and omitted terms are then dropped from BOTH lists in parallel,
+   so that the display names and the Mata columns always line up.          */
 if "`indepvars'" != "" {;
     fvexpand `indepvars' if `touse' ;
     local indepvars_exp_raw `r(varlist)' ;
+    fvrevar `indepvars_exp_raw' if `touse' ;
+    local indepvars_mata_raw `r(varlist)' ;
+    if (`: word count `indepvars_mata_raw'' != `: word count `indepvars_exp_raw'') {;
+        di as error "gepwreg: fvrevar returned a list of another length than fvexpand" ;
+        exit 498 ;
+    } ;
     local indepvars_exp ;
+    local indepvars_mata ;
+    local j = 0 ;
     foreach v of local indepvars_exp_raw {;
-        if !regexm("`v'","^[0-9]+b\.") & !regexm("`v'","^[0-9]+o\.") {;
-            local indepvars_exp `indepvars_exp' `v' ;
+        local ++j ;
+        local t : word `j' of `indepvars_mata_raw' ;
+        /* a base (Nb.) or omitted (No.) level anywhere in the term, an
+           interaction included; Nbn. (no base) is kept                      */
+        if !regexm("`v'","[0-9]+b\.") & !regexm("`v'","[0-9]+o\.") {;
+            local indepvars_exp  `indepvars_exp' `v' ;
+            local indepvars_mata `indepvars_mata' `t' ;
         } ;
     } ;
 } ;
-else local indepvars_exp "" ;
-
-/* Step 2 : fvrevar on the FILTERED list → real temp vars for Mata
-   fvrevar on  hhsize 1.rururb  →  hhsize __000002  (no base var)
-   Dimensions of indepvars_mata always equal dimensions of indepvars_exp  */
-if "`indepvars_exp'" != "" {;
-    fvrevar `indepvars_exp' if `touse' ;
-    local indepvars_mata `r(varlist)' ;
+else {;
+    local indepvars_exp "" ;
+    local indepvars_mata "" ;
 } ;
-else local indepvars_mata "" ;
 
 /* ── 1b. Ranking variable ───────────────────────────────────────────────── */
 /* Default: rank on depvar. If rankvar() specified, rank on that variable.  */
@@ -221,8 +237,41 @@ local n_obs = _gepwreg_n ;
 local tau   = `percentile' ;
 
 /* ── 6. Name matrices ────────────────────────────────────────────────────── */
-if `addcons' local vnames `indepvars_exp' _cons ;
-else         local vnames `indepvars_exp' ;
+/* (1.4) The base and omitted levels of a factor variable are put back into
+   e(b) and the variance matrices as zero entries, flagged in the stripe, as
+   Stata's own estimation commands do: the coefficient table then shows the
+   base level as (base), and estimates table, margins and the like line the
+   levels up.  E is the k x kf selection matrix from the estimated columns to
+   the full list.                                                            */
+if `addcons' {;
+    local vnames `indepvars_exp' _cons ;
+    local vfull  `indepvars_exp_raw' _cons ;
+} ;
+else {;
+    local vnames `indepvars_exp' ;
+    local vfull  `indepvars_exp_raw' ;
+} ;
+local kfull : word count `vfull' ;
+local kest  : word count `vnames' ;
+if (`kfull' > `kest') {;
+    tempname E ;
+    matrix `E' = J(`kest', `kfull', 0) ;
+    local i = 0 ;
+    local j = 0 ;
+    foreach v of local vfull {;
+        local ++j ;
+        if !regexm("`v'","[0-9]+b\.") & !regexm("`v'","[0-9]+o\.") {;
+            local ++i ;
+            matrix `E'[`i', `j'] = 1 ;
+        } ;
+    } ;
+    matrix _gepwreg_b  = _gepwreg_b  * `E' ;
+    matrix _gepwreg_V  = `E'' * _gepwreg_V  * `E' ;
+    matrix _gepwreg_Vn = `E'' * _gepwreg_Vn * `E' ;
+    if `do_svy'   matrix _gepwreg_Vs = `E'' * _gepwreg_Vs * `E' ;
+    if `boot' > 0 matrix _gepwreg_Vb = `E'' * _gepwreg_Vb * `E' ;
+    local vnames `vfull' ;
+} ;
 
 matrix colnames _gepwreg_b  = `vnames' ;
 matrix rownames _gepwreg_V  = `vnames' ;
@@ -231,7 +280,13 @@ matrix rownames _gepwreg_Vn = `vnames' ;
 matrix colnames _gepwreg_Vn = `vnames' ;
 
 /* ── 7. Post results ─────────────────────────────────────────────────────── */
-ereturn post _gepwreg_b _gepwreg_V, esample(`touse') obs(`n_obs') ;
+/* (1.4) buildfvinfo stores with e(b) the factor-variable information that
+   the display needs -- which levels are base levels and which cells are
+   empty in the estimation sample; a stripe assigned by matrix colnames
+   does not carry it, and base levels were then printed as (empty).
+   findomitted flags a column zeroed by the generalised inverse as o.    */
+ereturn post _gepwreg_b _gepwreg_V, esample(`touse') obs(`n_obs')
+        depname(`depvar') buildfvinfo findomitted ;
 ereturn matrix V_naive = _gepwreg_Vn ;
 if `do_svy' {;
     matrix rownames _gepwreg_Vs = `vnames' ;

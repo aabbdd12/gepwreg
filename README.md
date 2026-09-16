@@ -26,6 +26,13 @@ Version 1.3 implements the results of Araar (2026):
 
 A dialog box (`db gepwreg`) covers every option.
 
+Version 1.4.0 (September 2026) corrects the handling of factor variables:
+up to 1.3, the second level of an `i.` variable was pooled with the base
+level and reported as omitted, so the coefficients on the other levels were
+relative to the two pooled levels. Continuous and binary regressors were
+unaffected. Results published with 1.3 for factor-variable levels should be
+re-run.
+
 ## Installation
 
 ```stata
@@ -82,7 +89,7 @@ Percentile Weights Regression. Zenodo. https://doi.org/10.5281/zenodo.20315684
 ```
 
 A `CITATION.cff` file is included for reference managers. The package itself
-is version 1.3.1 at https://github.com/aabbdd12/gepwreg.
+is version 1.4.0 at https://github.com/aabbdd12/gepwreg.
 
 ## License
 

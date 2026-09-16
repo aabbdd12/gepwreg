@@ -1,4 +1,4 @@
-*! gepwreg_setable.ado  1.3.1  16sep2026  Araar A.
+*! gepwreg_setable.ado  1.4.0  16sep2026  Araar A.
 *! Post-estimation command of gepwreg: the naive, IF-corrected and bootstrap
 *! standard errors of the last gepwreg estimation side by side.  Kept in its
 *! own file so that Stata finds it whether or not gepwreg.ado is in memory.
@@ -41,6 +41,11 @@ program define gepwreg_setable ;
     local names : colnames e(b) ;
     local j = 1 ;
     foreach nm of local names {;
+        /* (1.4) base and omitted levels sit in e(b) as zeros: skip them */
+        if regexm("`nm'","[0-9]+b\.") | regexm("`nm'","[0-9]+o\.") {;
+            local ++j ;
+            continue ;
+        } ;
         local bj = b[1,`j'] ;
         local sn = sqrt(V_n[`j',`j']) ;
         local si = sqrt(V_IF[`j',`j']) ;
