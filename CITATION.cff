@@ -13,14 +13,14 @@ authors:
     email: aabd@ecn.ulaval.ca
 preferred-citation:
   type: report
-  title: "Percentile weights regression: what the outcome-ranked estimator measures, a two-step estimator of the effect at a quantile, and inference under complex survey design (version 3)"
+  title: "Effects at a quantile of the outcome: a two-step percentile-weights estimator, with analytical and survey-design inference"
   authors:
     - family-names: Araar
       given-names: Abdelkrim
   year: 2026
   publisher:
     name: Zenodo
-  doi: 10.5281/zenodo.20315684
+  doi: 10.5281/zenodo.22845708
 keywords:
   - Stata
   - percentile weights regression
