@@ -59,7 +59,7 @@ tables are never built from a partial run.
 
 ## The checks and the derivations
 
-These print their results rather than writing files. They are what the paper
+These print their results; `p8_merr.do` also writes one CSV. They are what the paper
 rests on where it does not report a table.
 
 | file | section | what it establishes | time |
@@ -69,6 +69,9 @@ rests on where it does not report a table.
 | `pwr_bandwidth_check.py` | 4 | the plug-in bandwidth against Silverman's rule and against the oracle | 2–3 min |
 | `pwr_bandwidth_variance.py` | 5 | what choosing the bandwidth on the sample costs in variance | 1–2 min |
 | `pwr_exact_truth.py` | 6 | the exact θ(τ) of the Monte Carlo designs, by numerical integration | about 5 min |
+| `p8_merr.do` | 5 | measurement error in a heterogeneity variable, against a known truth; writes `results/p8_merr.csv` | about 1 min |
+| `p9_merr_curvature.do` | 5 | the limit: the correction fires on a variable with no error but a curved effect; writes `results/p9_merr_curvature.csv` | about 1 min |
+| `p8_truth.py` | 5 | the values of θ(0.75) the two files above compare against, with their convergence tables | about 2 min |
 
 `pwr_bandwidth_variance.py` imports from `pwr_bandwidth_check.py`, so the
 three Python programmes must stay in the same folder. The times above were
