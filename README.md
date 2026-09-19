@@ -157,11 +157,15 @@ household survey extract used in the paper and in the help file. Stata 16 or
 later; no dependencies.
 
 `replace` overwrites whichever version is installed, so those are also the two
-lines to switch between them. `which gepwreg` says which one you have.
+lines to switch between them. `which gepwreg` says which one you have: the
+header of 1.4 is dated September 2026, that of 1.3 June 2026.
 
 Results obtained with 1.3 on the rank of the outcome should be re-estimated —
 see *What changed in 1.4* above. Results obtained with `rankvar()` are
 unaffected.
+
+The `replication/` folder of the `v14` branch holds the programmes that
+produce every number of the paper, with their own README.
 
 ## Quick start
 
