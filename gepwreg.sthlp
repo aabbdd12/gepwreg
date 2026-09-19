@@ -1,7 +1,7 @@
 {smcl}
-{* *! gepwreg.sthlp  v1.4.0  16sep2026  Araar A.}{...}
+{* *! gepwreg.sthlp  v1.0  Araar A.  2024}{...}
 {vieweralsosee "qreg" "help qreg"}{...}
-{vieweralsosee "rifhdreg" "help rifhdreg"}{...}
+{vieweralsosee "rifreg" "help rifreg"}{...}
 {vieweralsosee "gepwe" "help gepwe"}{...}
 {viewerjumpto "Syntax" "gepwreg##syntax"}{...}
 {viewerjumpto "Description" "gepwreg##description"}{...}
@@ -44,9 +44,8 @@ standard errors
 {synopt:{opt band(#)}}manual fixed bandwidth (overrides optimal/Silverman){p_end}
 {synopt:{opt optbw}}explicitly request the MSE-optimal default (synonym){p_end}
 {syntab:Standard errors}
-{synopt:{it:(automatic)}}Taylor SE if {cmd:svyset} declares a PSU or strata; IF-corrected otherwise{p_end}
-{synopt:{opt vce(svy)}}Taylor SE explicitly (optional){p_end}
-{synopt:{opt vce(if)}}IF-corrected SE even on {cmd:svyset} data{p_end}
+{synopt:{it:(automatic)}}Taylor SE if {cmd:svyset} declared; IF-corrected otherwise{p_end}
+{synopt:{opt vce(svy)}}force Taylor SE explicitly (optional){p_end}
 {synopt:{opt boot(#)}}pairs bootstrap — command line only; default {cmd:boot(0)}{p_end}
 {syntab:Display}
 {synopt:{opt l:evel(#)}}confidence level; default {cmd:level(95)}{p_end}
@@ -55,25 +54,12 @@ standard errors
 
 {phang}
 {cmd:fweight}s, {cmd:aweight}s, and {cmd:pweight}s are allowed; see
-{help weight}.  {it:indepvars} may contain factor variables; see
-{help fvvarlist}.  Base levels are carried in {cmd:e(b)} as zero entries and
-hidden in the table, as in Stata's own estimation commands, so that
-{helpb estimates table} lines the levels up across commands.  A level whose
-indicator is identically zero within the kernel neighbourhood of {it:tau}
-is reported as omitted.{p_end}
+{help weight}.{p_end}
 
 {phang}
-The post-estimation command
-
-{p 8 17 2}
-{cmd:gepwreg_setable}
-
-{phang}
-typed after {cmd:gepwreg}, displays the naive, IF-corrected, Taylor (when
-the {cmd:svyset} design was used) and bootstrap standard errors of the last
-estimation side by side, with the ratio of the two most informative ones.
-The {cmd:boot(#)} option (command line only) is required for the bootstrap
-column.
+After estimation, {cmd:gepwreg_setable} displays a comparison of naive,
+IF-corrected, and bootstrap SE. The {cmd:boot(B)} option (command line only)
+is required for bootstrap SE.
 
 {hline}
 {marker description}{...}
@@ -93,7 +79,7 @@ target percentile {it:tau}:
 Unlike conditional quantile regression ({help qreg}), the percentile
 ranking is based on the {it:dependent variable} rather than the predicted
 component. Unlike unconditional quantile regression
-({help rifhdreg}), the coefficient measures a local slope rather than a
+({help rifreg}), the coefficient measures a local slope rather than a
 marginal location shift.
 
 {pstd}
@@ -191,13 +177,12 @@ the z-based ordering.
 
 {phang}
 {opt vce(svy)} explicitly requests Taylor linearisation SE under the
-survey design declared by {helpb svyset}. This option is {bf:optional} --
-{cmd:gepwreg} uses Taylor SE whenever {cmd:svyset} declares a PSU or
-strata (up to version 1.3 the option was required).  {opt vce(if)} keeps
-the IF-corrected SE on {cmd:svyset} data.  The PSU, strata, and probability
-weights are read directly from {cmd:svyset}.  At least 2 PSUs per stratum
-are required; a warning is issued when any stratum has fewer than 5 PSUs in
-the estimation sample.
+survey design declared by {helpb svyset}. This option is {bf:optional} —
+{cmd:gepwreg} automatically uses Taylor SE when {cmd:svyset} has been
+declared, without requiring {opt vce(svy)}.
+The PSU, strata, and probability weights are read directly from {cmd:svyset}.
+At least 2 PSUs per stratum are required; a warning is issued when
+any stratum has fewer than 5 PSUs.
 
 {phang}
 {opt boot(#)} requests pairs bootstrap SE with {it:#} replications.
@@ -346,7 +331,6 @@ diagnostic: values below 50 suggest the bandwidth may be too narrow.
 {synopt:{cmd:e(b)}}coefficient vector{p_end}
 {synopt:{cmd:e(V)}}main VCV: Taylor if svyset declared, IF otherwise{p_end}
 {synopt:{cmd:e(V_IF)}}IF-based analytical VCV (always stored){p_end}
-{synopt:{cmd:e(V_svy)}}Taylor VCV under the {cmd:svyset} design (when used){p_end}
 {synopt:{cmd:e(V_naive)}}naive WLS variance matrix (inconsistent, reference only){p_end}
 {synopt:{cmd:e(V_boot)}}bootstrap variance matrix (if {cmd:boot()}>0){p_end}
 
@@ -363,62 +347,45 @@ diagnostic: values below 50 suggest the bandwidth may be too narrow.
 {marker examples}{...}
 {title:Examples}
 
-{pstd}
-The examples use {cmd:bkf98I.dta}, the Burkina Faso 1998 household survey
-extract distributed with the package ({cmd:net get gepwreg}): 8,478
-households in 10 strata and 425 primary sampling units, sampling weight
-{cmd:weight}.  The outcome is log per capita expenditure; a male-head and an
-urban indicator are built from the labelled variables.{p_end}
+{pstd}{ul:Basic usage}{p_end}
 
-{pstd}{ul:Setup}{p_end}
+{phang2}{cmd:. use data.dta}{p_end}
+{phang2}{cmd:. gen fw = hhsize * wta_hh}{p_end}
+{phang2}{cmd:. gen lexp = log(pcexp)}{p_end}
 
-{phang2}{cmd:. use bkf98I, clear}{p_end}
-{phang2}{cmd:. generate lexp  = ln(exppc)}{p_end}
-{phang2}{cmd:. generate male  = (sex == 1)}{p_end}
-{phang2}{cmd:. generate urban = (zone == 2)}{p_end}
+{phang2}{cmd:. gepwreg lexp i.hhedlevel hhagey hhsize i.hhsex i.rururb [fw=fw], per(0.5)}{p_end}
 
-{pstd}{ul:Weighted estimation at the median, IF-corrected standard errors}{p_end}
+{pstd}{ul:Compare with OLS and quantile regression}{p_end}
 
-{phang2}{cmd:. gepwreg lexp size male urban i.gse [pw=weight], per(0.5)}{p_end}
+{phang2}{cmd:. gepwreg  lexp i.hhedlevel hhagey hhsize [fw=fw], per(0.5)}{p_end}
+{phang2}{cmd:. eststo pwr50}{p_end}
+{phang2}{cmd:. qreg   lexp i.hhedlevel hhagey hhsize [fw=fw], quantile(0.5)}{p_end}
+{phang2}{cmd:. eststo qr50}{p_end}
+{phang2}{cmd:. esttab pwr50 qr50}{p_end}
 
-{pstd}{ul:Survey design: Taylor linearisation is used automatically once svyset}{p_end}
-
-{phang2}{cmd:. svyset psu [pw=weight], strata(strata)}{p_end}
-{phang2}{cmd:. gepwreg lexp size male urban i.gse, per(0.5)}{p_end}
-{phang2}{cmd:. gepwreg lexp size male urban i.gse, per(0.5) vce(svy)}{p_end}
-
-{pstd}{ul:Compare with conditional and unconditional quantile regression}{p_end}
-
-{phang2}{cmd:. gepwreg lexp size male urban i.gse [pw=weight], per(0.5)}{p_end}
-{phang2}{cmd:. estimates store pwr50}{p_end}
-{phang2}{cmd:. qreg lexp size male urban i.gse [pw=weight], quantile(0.5)}{p_end}
-{phang2}{cmd:. estimates store qr50}{p_end}
-{phang2}{cmd:. rifhdreg lexp size male urban i.gse [pw=weight], rif(q(50))}{p_end}
-{phang2}{cmd:. estimates store uqr50}{p_end}
-{phang2}{cmd:. estimates table pwr50 qr50 uqr50, se}{p_end}
-
-{pstd}{ul:A profile across percentiles}{p_end}
+{pstd}{ul:Multiple percentiles}{p_end}
 
 {phang2}{cmd:. foreach tau in 0.10 0.25 0.50 0.75 0.90 {c -(}}{p_end}
-{phang2}{cmd:.     gepwreg lexp size male urban i.gse [pw=weight], per(`tau')}{p_end}
-{phang2}{cmd:.     estimates store pwr`=100*`tau''}{p_end}
+{phang2}{cmd:.     gepwreg lexp hhagey hhsize [fw=fw], per(`tau')}{p_end}
+{phang2}{cmd:.     eststo pwr`=100*`tau''}{p_end}
 {phang2}{cmd:. {c )-}}{p_end}
-{phang2}{cmd:. estimates table pwr10 pwr25 pwr50 pwr75 pwr90, se}{p_end}
+{phang2}{cmd:. esttab pwr10 pwr25 pwr50 pwr75 pwr90}{p_end}
 
-{pstd}{ul:Ranking on another variable than the outcome}{p_end}
+{pstd}{ul:With bootstrap validation}{p_end}
 
-{phang2}{cmd:. gepwreg lexp size male urban i.gse [pw=weight], per(0.25) rankvar(size)}{p_end}
+{phang2}{cmd:. gepwreg lexp i.hhedlevel hhagey hhsize [fw=fw], per(0.5) boot(1000)}{p_end}
+{phang2}{cmd:. gepwreg_setable}{p_end}
 
 {pstd}{ul:Bandwidth choice (MSE-optimal is the default)}{p_end}
 
-{phang2}{cmd:. gepwreg lexp size [pw=weight], per(0.5)}{p_end}
-{phang2}{cmd:. gepwreg lexp size [pw=weight], per(0.5) silverman}{p_end}
-{phang2}{cmd:. gepwreg lexp size [pw=weight], per(0.5) band(0.04)}{p_end}
-{phang2}{cmd:. display "h = " e(h) "  method = " e(bw_method) "  N_eff = " e(N_eff)}{p_end}
+{phang2}{cmd:. gepwreg lexp hhagey hhsize [fw=fw], per(0.5)}             (MSE-optimal, default){p_end}
+{phang2}{cmd:. gepwreg lexp hhagey hhsize [fw=fw], per(0.5) silverman}  (Silverman rule){p_end}
+{phang2}{cmd:. gepwreg lexp hhagey hhsize [fw=fw], per(0.5) band(0.04)} (manual fixed){p_end}
+{phang2}{cmd:. di "h = " e(h) "  method = " e(bw_method) "  N_eff = " e(N_eff)}{p_end}
 
-{pstd}{ul:Bootstrap validation of the analytical standard errors}{p_end}
+{pstd}{ul:SE comparison table}{p_end}
 
-{phang2}{cmd:. gepwreg lexp size male urban i.gse [pw=weight], per(0.5) boot(500)}{p_end}
+{phang2}{cmd:. gepwreg lexp i.hhedlevel hhagey hhsize [fw=fw], per(0.5) boot(500)}{p_end}
 {phang2}{cmd:. gepwreg_setable}{p_end}
 
 {hline}
@@ -433,15 +400,6 @@ Université Laval.
 {phang}
 Araar, A. (2023). Exploring heterogeneous effects: Quantile models and
 percentile weights regression. {it:PEP Working Paper Series}, 2023-15.
-
-{phang}
-Araar, A. (2026). Exploring heterogeneous effects: Quantile models and
-percentile weights regression -- analytical standard errors, MSE-optimal
-bandwidth, and inference under complex survey design.  Zenodo,
-{browse "https://doi.org/10.5281/zenodo.20315684":10.5281/zenodo.20315684}.
-The reference for the standard errors, the bandwidth rule and the survey
-design variance implemented in this version, and the paper to cite for the
-command.
 
 {phang}
 Deville, J.-C. (1999). Variance estimation for complex statistics and
@@ -472,32 +430,12 @@ Silverman, B. W. (1986).
 Chapman & Hall, London.
 
 {hline}
-{title:Version history}
-
-{phang}
-1.4.0 (September 2026).  Factor variables: every non-base level now gets its
-own indicator.  Up to 1.3, the second level of a factor variable was pooled
-with the base level and reported as omitted, so the coefficients on the other
-levels were relative to the two pooled levels; continuous and binary
-regressors were unaffected.  Base levels are carried in {cmd:e(b)}.  Taylor
-SE are used as soon as {cmd:svyset} declares a PSU or strata, as documented
-({opt vce(if)} to keep the IF-corrected SE); the count of PSUs per stratum
-behind the warning was wrong; {cmd:e(V_IF)} is stored under a survey design
-too; {cmd:gepwreg_setable} is a separate file and shows the Taylor column.
-
-{phang}
-1.3 (May 2026).  MSE-optimal bandwidth as the default ({cmd:silverman} to
-revert), Taylor linearisation under {cmd:svyset}, ties in the ranking
-variable given the same rank, {cmd:rankvar()}.
-
-{hline}
 {title:Author}
 
 {pstd}
 Abdelkrim Araar{break}
-Université Laval and Partnership for Economic Policy (PEP), Québec, Canada{break}
-{browse "mailto:aabd@ecn.ulaval.ca":aabd@ecn.ulaval.ca}{break}
-Package: {browse "https://github.com/aabbdd12/gepwreg"}
+Université Laval, Québec, Canada{break}
+{browse "mailto:aabd@ecn.ulaval.ca":aabd@ecn.ulaval.ca}
 
 {hline}
 {title:Also see}
@@ -505,7 +443,7 @@ Package: {browse "https://github.com/aabbdd12/gepwreg"}
 {psee}
 {helpb qreg}: Quantile regression{p_end}
 {psee}
-{helpb rifhdreg}: RIF regression (UQR), Rios-Avila (2020){p_end}
+{helpb rifreg}: RIF regression (UQR){p_end}
 {psee}
 {helpb gepwe}: Generate percentile kernel weights{p_end}
 {psee}

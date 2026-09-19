@@ -1,11 +1,4 @@
-*! gepwreg.ado  v1.4.0  16sep2026  Araar A.  (MSE-optimal bandwidth is the default; use silverman to revert)
-*! 1.4.0 (16sep2026): factor variables -- every non-base level now gets its own
-*! indicator.  Up to 1.3.1 the second level of a factor variable was pooled with
-*! the base and reported as omitted (a column of zeros from fvrevar), so the
-*! coefficients on the other levels were relative to the two pooled levels.
-*! Continuous and binary regressors are unaffected.
-*! 1.3.1 (16sep2026): gepwreg_setable in its own file; help examples on the
-*! distributed data; references and package file.
+*! gepwreg.ado  v1.3  Araar A.  (MSE-optimal bandwidth is the default; use silverman to revert)
 *! Percentile Weights Regression
 *! Araar (2016, 2023) ; Deville (1999) ; Newey & McFadden (1994)
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -45,41 +38,29 @@ if r(N) == 0 error 2000 ;
 local depvar    : word 1 of `varlist' ;
 local indepvars : list varlist - depvar ;
 
-/* Step 1 : fvexpand, then create the temporary variables from the FULL
-   expanded list, base levels included.  (1.4) Passing only the non-base
-   levels to fvrevar -- 2.gse 3.gse ... 7.gse -- makes Stata take the lowest
-   listed level as the base of that set, so its indicator came out as a
-   column of zeros: level 2 was silently pooled with level 1 and reported as
-   "omitted".  With 1b.gse in the list every level keeps its own indicator;
-   the base and omitted terms are then dropped from BOTH lists in parallel,
-   so that the display names and the Mata columns always line up.          */
+/* Step 1 : fvexpand then filter base (Nb.) and omitted (No.) categories
+   0b.rururb → removed    1.rururb → kept
+   This gives the display names AND the clean list for fvrevar             */
 if "`indepvars'" != "" {;
     fvexpand `indepvars' if `touse' ;
     local indepvars_exp_raw `r(varlist)' ;
-    fvrevar `indepvars_exp_raw' if `touse' ;
-    local indepvars_mata_raw `r(varlist)' ;
-    if (`: word count `indepvars_mata_raw'' != `: word count `indepvars_exp_raw'') {;
-        di as error "gepwreg: fvrevar returned a list of another length than fvexpand" ;
-        exit 498 ;
-    } ;
     local indepvars_exp ;
-    local indepvars_mata ;
-    local j = 0 ;
     foreach v of local indepvars_exp_raw {;
-        local ++j ;
-        local t : word `j' of `indepvars_mata_raw' ;
-        /* a base (Nb.) or omitted (No.) level anywhere in the term, an
-           interaction included; Nbn. (no base) is kept                      */
-        if !regexm("`v'","[0-9]+b\.") & !regexm("`v'","[0-9]+o\.") {;
-            local indepvars_exp  `indepvars_exp' `v' ;
-            local indepvars_mata `indepvars_mata' `t' ;
+        if !regexm("`v'","^[0-9]+b\.") & !regexm("`v'","^[0-9]+o\.") {;
+            local indepvars_exp `indepvars_exp' `v' ;
         } ;
     } ;
 } ;
-else {;
-    local indepvars_exp "" ;
-    local indepvars_mata "" ;
+else local indepvars_exp "" ;
+
+/* Step 2 : fvrevar on the FILTERED list → real temp vars for Mata
+   fvrevar on  hhsize 1.rururb  →  hhsize __000002  (no base var)
+   Dimensions of indepvars_mata always equal dimensions of indepvars_exp  */
+if "`indepvars_exp'" != "" {;
+    fvrevar `indepvars_exp' if `touse' ;
+    local indepvars_mata `r(varlist)' ;
 } ;
+else local indepvars_mata "" ;
 
 /* ── 1b. Ranking variable ───────────────────────────────────────────────── */
 /* Default: rank on depvar. If rankvar() specified, rank on that variable.  */
@@ -176,19 +157,6 @@ local svy_strata "" ;
 if "`svy'" != "" {;
     local vce "linearized" ;
 } ;
-/* (1.4) Taylor linearisation is the default whenever svyset declares a PSU
-   or strata, as the help always said; up to 1.3 it required vce(svy).
-   vce(if) keeps the IF-corrected standard errors on svyset data.          */
-if "`vce'" == "" {;
-    qui svyset ;
-    if "`r(su1)'" != "" | "`r(strata1)'" != "" {;
-        local vce "svy" ;
-        local svy_auto = 1 ;
-    } ;
-} ;
-else if lower("`vce'")=="if" | lower("`vce'")=="analytic" {;
-    local vce "" ;
-} ;
 if "`vce'" != "" {;
     if lower("`vce'")=="svy" | lower("`vce'")=="survey" | lower("`vce'")=="linearized" {;
         /* Check svyset has been called */
@@ -205,8 +173,7 @@ if "`vce'" != "" {;
             qui replace `fw_var' = `r(wvar)' if `touse' ;
             local wgt_name "PW[`r(wvar)'] (svyset)" ;
         } ;
-        if ("`svy_auto'" == "1") di as text "Survey design detected (svyset); specify vce(if) for the IF-corrected s.e." ;
-        else                      di as text "Survey design detected:" ;
+        di as text "Survey design detected:" ;
         if "`svy_psu'" == "" {;
             di as text "  PSU    : (not declared — variance may be conservative)" ;
         } ;
@@ -216,22 +183,16 @@ if "`vce'" != "" {;
         di as text "  Strata : `svy_strata'" ;
         /* Check minimum PSU per stratum */
         if "`svy_strata'" != "" & "`svy_psu'" != "" {;
-            /* (1.4) number of PSUs per stratum in the estimation sample;
-               up to 1.3 the count marked the first observation of the
-               stratum, not of each PSU, and always reported 1              */
+            qui tab `svy_strata' if `touse' ;
             qui {;
-                tempvar _first _npsu ;
-                bysort `touse' `svy_strata' `svy_psu' : gen byte `_first' = (_n == 1) & `touse' ;
-                bysort `touse' `svy_strata' (`svy_psu') : gen `_npsu' = sum(`_first') ;
-                bysort `touse' `svy_strata' : replace `_npsu' = `_npsu'[_N] ;
+                tempvar _npsu ;
+                bysort `svy_strata' (`svy_psu') : gen `_npsu' = (_n==1) ;
+                bysort `svy_strata' : replace `_npsu' = sum(`_npsu') ;
+                bysort `svy_strata' : replace `_npsu' = `_npsu'[_N] ;
             } ;
             qui sum `_npsu' if `touse' ;
             local min_psu = r(min) ;
-            if `min_psu' < 2 {;
-                di as text "Warning: a stratum has a single PSU in the estimation sample;" ;
-                di as text "  its contribution to the Taylor variance is not defined." ;
-            } ;
-            else if `min_psu' < 5 {;
+            if `min_psu' < 5 {;
                 di as text "Warning: minimum PSU/stratum = `min_psu'." ;
                 di as text "  Taylor SE may be unreliable. Recommend n_h >= 10." ;
             } ;
@@ -257,61 +218,18 @@ local n_obs = _gepwreg_n ;
 local tau   = `percentile' ;
 
 /* ── 6. Name matrices ────────────────────────────────────────────────────── */
-/* (1.4) The base and omitted levels of a factor variable are put back into
-   e(b) and the variance matrices as zero entries, flagged in the stripe, as
-   Stata's own estimation commands do: the coefficient table then shows the
-   base level as (base), and estimates table, margins and the like line the
-   levels up.  E is the k x kf selection matrix from the estimated columns to
-   the full list.                                                            */
-if `addcons' {;
-    local vnames `indepvars_exp' _cons ;
-    local vfull  `indepvars_exp_raw' _cons ;
-} ;
-else {;
-    local vnames `indepvars_exp' ;
-    local vfull  `indepvars_exp_raw' ;
-} ;
-local kfull : word count `vfull' ;
-local kest  : word count `vnames' ;
-if (`kfull' > `kest') {;
-    tempname E ;
-    matrix `E' = J(`kest', `kfull', 0) ;
-    local i = 0 ;
-    local j = 0 ;
-    foreach v of local vfull {;
-        local ++j ;
-        if !regexm("`v'","[0-9]+b\.") & !regexm("`v'","[0-9]+o\.") {;
-            local ++i ;
-            matrix `E'[`i', `j'] = 1 ;
-        } ;
-    } ;
-    matrix _gepwreg_b  = _gepwreg_b  * `E' ;
-    matrix _gepwreg_V  = `E'' * _gepwreg_V  * `E' ;
-    matrix _gepwreg_Vn = `E'' * _gepwreg_Vn * `E' ;
-    matrix _gepwreg_Vi = `E'' * _gepwreg_Vi * `E' ;
-    if `do_svy'   matrix _gepwreg_Vs = `E'' * _gepwreg_Vs * `E' ;
-    if `boot' > 0 matrix _gepwreg_Vb = `E'' * _gepwreg_Vb * `E' ;
-    local vnames `vfull' ;
-} ;
+if `addcons' local vnames `indepvars_exp' _cons ;
+else         local vnames `indepvars_exp' ;
 
 matrix colnames _gepwreg_b  = `vnames' ;
 matrix rownames _gepwreg_V  = `vnames' ;
 matrix colnames _gepwreg_V  = `vnames' ;
 matrix rownames _gepwreg_Vn = `vnames' ;
 matrix colnames _gepwreg_Vn = `vnames' ;
-matrix rownames _gepwreg_Vi = `vnames' ;
-matrix colnames _gepwreg_Vi = `vnames' ;
 
 /* ── 7. Post results ─────────────────────────────────────────────────────── */
-/* (1.4) buildfvinfo stores with e(b) the factor-variable information that
-   the display needs -- which levels are base levels and which cells are
-   empty in the estimation sample; a stripe assigned by matrix colnames
-   does not carry it, and base levels were then printed as (empty).
-   findomitted flags a column zeroed by the generalised inverse as o.    */
-ereturn post _gepwreg_b _gepwreg_V, esample(`touse') obs(`n_obs')
-        depname(`depvar') buildfvinfo findomitted ;
+ereturn post _gepwreg_b _gepwreg_V, esample(`touse') obs(`n_obs') ;
 ereturn matrix V_naive = _gepwreg_Vn ;
-ereturn matrix V_IF    = _gepwreg_Vi ;
 if `do_svy' {;
     matrix rownames _gepwreg_Vs = `vnames' ;
     matrix colnames _gepwreg_Vs = `vnames' ;
@@ -417,8 +335,8 @@ real matrix _gepwe_wp(real colvector y,
     /* zrank : alternative ranking variable z (rows=n) or empty (rows=0).
        If empty, rank on y (standard PWR).
        If provided, rank on z (generalised rankvar option).           */
-    real scalar    n, h, tmp, q25, q75, sd_pc, i
-    real colvector ord, fw_s, pc_s, pc_sorted, u, w_s, w, pc, z_use, z_s
+    real scalar    n, h, tmp, q25, q75, sd_pc
+    real colvector ord, fw_s, pc_s, pc_sorted, u, w_s, w, pc, z_use
 
     n         = rows(y)
 
@@ -428,16 +346,6 @@ real matrix _gepwe_wp(real colvector y,
     ord       = order(z_use, 1)       /* sort on z (or y if default) */
     fw_s      = fw[ord]
     pc_s      = runningsum(fw_s) :/ sum(fw_s)
-
-    /* Ties: assign each group of equal z the SAME rank = F_n(z) (paper eq 3),
-       so p-hat depends only on the value, not on the sort order of ties.
-       Removes run-to-run drift in beta and the MSE-optimal bandwidth.       */
-    z_s       = z_use[ord]
-    i         = n - 1
-    while (i >= 1) {
-        if (z_s[i] == z_s[i+1]) pc_s[i] = pc_s[i+1]
-        i--
-    }
 
     pc_sorted = sort(pc_s, 1)
     q25       = pc_sorted[ceil(0.25 * n)]
@@ -920,7 +828,6 @@ void _gepwreg_main(string scalar depvar,
     V_IF    = _se_IF(X, y, w, pc, h, tau, beta, z_ord_v)
     V_naive = _se_naive(X, y, w, beta)
 
-    st_matrix("_gepwreg_Vi", V_IF)          /* (1.4) e(V_IF) always stored */
     /* Survey Taylor variance — overrides V_IF as main SE */
     if (do_svy) {
         V_svy = _se_svy(X, y, w, pc, h, tau, beta,
@@ -944,3 +851,73 @@ void _gepwreg_main(string scalar depvar,
     st_numscalar("_gepwreg_n",    n)
 }
 end
+#delimit ;
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   gepwreg_setable : side-by-side SE comparison table
+   ───────────────────────────────────────────────────────────────────────── */
+capture program drop gepwreg_setable ;
+program define gepwreg_setable ;
+    if "`e(cmd)'" != "gepwreg" {;
+        di as error "gepwreg_setable: last estimation must be gepwreg" ;
+        error 301 ;
+    } ;
+    matrix b    = e(b) ;
+    matrix V_IF = e(V) ;
+    matrix V_n  = e(V_naive) ;
+    local hasBoot = (e(boot) > 0) ;
+    if `hasBoot' matrix V_bt = e(V_boot) ;
+    di "" ;
+    di as text "SE comparison  (tau=" as result %5.3f e(tau)
+       as text "  h=" as result %8.6f e(h) as text ")" ;
+    di as text "{hline 72}" ;
+    if `hasBoot' {;
+        di as text %18s "Variable"
+           %11s "Coeff."
+           %11s "SE_naive"
+           %11s "SE_IF"
+           %11s "SE_boot"
+           %9s  "IF/Boot" ;
+    } ;
+    else {;
+        di as text %18s "Variable"
+           %11s "Coeff."
+           %11s "SE_naive"
+           %11s "SE_IF"
+           %10s "IF/Naive" ;
+    } ;
+    di as text "{hline 72}" ;
+    local names : colnames e(b) ;
+    local j = 1 ;
+    foreach nm of local names {;
+        local bj = b[1,`j'] ;
+        local sn = sqrt(V_n[`j',`j']) ;
+        local si = sqrt(V_IF[`j',`j']) ;
+        if `hasBoot' {;
+            local sb = sqrt(V_bt[`j',`j']) ;
+            local r  = `si' / `sb' ;
+            di as text %18s abbrev("`nm'",18)
+               as result %11.5f `bj' %11.5f `sn'
+                         %11.5f `si' %11.5f `sb' %9.3f `r' ;
+        } ;
+        else {;
+            local r  = `si' / `sn' ;
+            di as text %18s abbrev("`nm'",18)
+               as result %11.5f `bj' %11.5f `sn'
+                         %11.5f `si' %10.3f `r' ;
+        } ;
+        local ++j ;
+    } ;
+    di as text "{hline 72}" ;
+    di as text "SE_naive : WLS weights-fixed (inconsistent)" ;
+    di as text "SE_IF    : influence-function corrected (Deville 1999)" ;
+    if `hasBoot' {;
+        di as text "SE_boot  : pairs bootstrap B=" as result e(boot)
+           as text " (weights reconstructed each draw)" ;
+    } ;
+    if e(do_svy) {;
+        di as text "SE_svy   : Taylor linearisation (PSU + strata)" ;
+        di as text "           stored in e(V_svy)" ;
+    } ;
+    di "" ;
+end ;
