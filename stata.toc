@@ -5,4 +5,4 @@ d Author: Abdelkrim Araar
 d Universite Laval and Partnership for Economic Policy (PEP)
 d Support: aabd@ecn.ulaval.ca
 d
-p gepwreg Percentile Weights Regression with analytical standard errors
+p gepwreg Percentile weights regression: effects at a quantile of the outcome, along a covariate, at the initial quantile

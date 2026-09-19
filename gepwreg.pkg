@@ -1,25 +1,34 @@
 v 3
-d gepwreg. Percentile Weights Regression with analytical standard errors
+d gepwreg. Percentile weights regression: effects at a quantile of the outcome
 d
 d Author: Abdelkrim Araar
 d Universite Laval and Partnership for Economic Policy (PEP)
 d Support: aabd@ecn.ulaval.ca
 d
-d Distribution-Date: 20260916
+d Distribution-Date: 20260919
 d
 d Description:
-d gepwreg estimates the Percentile Weights Regression (PWR) of Araar
-d (2016, 2023): the local marginal effect of the regressors on the outcome
-d for observations whose rank in the distribution of the outcome (or of
-d another ranking variable) is in the neighbourhood of a target percentile.
-d Version 1.4 (factor-variable fix) implements the results of Araar (2026,
-d doi:10.5281/zenodo.20315684): closed-form analytical standard errors by
-d linearisation, which account for the estimation of the kernel weights;
-d an MSE-optimal bandwidth chosen by a two-step plug-in rule; Taylor
-d linearisation under a complex survey design declared by svyset; a pairs
-d bootstrap that re-estimates the weights at each replication; and ranking
-d on any variable other than the outcome.  gepwreg_setable, a post-
-d estimation command, compares the standard errors; a dialog box is included.
+d gepwreg estimates the effect of the covariates on an outcome for the
+d units located at a target quantile of the outcome, at the initial
+d quantile (the outcome before the contribution of the covariates), or
+d along the rank of an observed covariate, with the percentile weights of
+d Araar (2016).  Version 1.4 estimates the effect at a quantile of the
+d outcome by a two-step estimator (unit-level effects from a heterogeneity
+d model -- conditional quantile regression, or interactions with observed
+d variables -- averaged with the percentile weights), with analytical
+d standard errors by linearisation, Taylor linearisation under a complex
+d survey design declared by svyset, and a bootstrap that re-runs the whole
+d procedure.  The bandwidth of every estimator is the MSE-optimal plug-in
+d of Araar (2026); silverman and band() override it.  The kernel-weighted
+d regression on outcome-ranked units of the
+d earlier versions is kept as a descriptive option (rankdep); see the help
+d file and Araar (2026, doi:10.5281/zenodo.20315684, version 3).
+d With het(varlist), merr corrects step 1 for classical measurement error
+d in the heterogeneity variables: one error variance per variable,
+d identified from the third moments of the step-1 residual, applied only
+d where it is identified and where the data support it.
+d gepwreg_setable, a post-estimation command, compares the standard
+d errors; a dialog box is included.
 d
 d bkf98I.dta, retrieved by net get, is the Burkina Faso 1998 household
 d survey extract used in the paper and in the help file examples.
