@@ -1,19 +1,35 @@
 v 3
 d gepwreg. Percentile Weights Regression with analytical standard errors
 d
-d Author: Araar Abdelkrim
-d Universite Laval & Partnership for Economic Policy (PEP)
+d Author: Abdelkrim Araar
+d Universite Laval and Partnership for Economic Policy (PEP)
 d Support: aabd@ecn.ulaval.ca
 d
-d Distribution-Date: 20260512
+d Distribution-Date: 20260619
 d
 d Description:
-d This package implements the Percentile Weights Regression (PWR)
-d introduced by Araar (2016, 2023). It provides consistent analytical 
-d standard errors (linearisation variance / functional delta method), 
-d MSE-optimal bandwidth selection, and inference under complex survey design.
+d gepwreg estimates the Percentile Weights Regression (PWR) of Araar
+d (2016, 2023): the local marginal effect of the regressors on the outcome
+d for observations whose rank in the distribution of the outcome (or of
+d another ranking variable) is in the neighbourhood of a target percentile.
+d Version 1.3 implements the results of Araar (2026): closed-form analytical
+d standard errors by linearisation, which account for the estimation of the
+d kernel weights; an MSE-optimal bandwidth chosen by a two-step plug-in rule;
+d Taylor linearisation under a complex survey design declared by svyset; a
+d pairs bootstrap that re-estimates the weights at each replication; and
+d ranking on any variable other than the outcome.  A dialog box is included.
+d
+d This is the version of June 2026, kept so that results published with it
+d can be reproduced.  It is superseded by version 1.4, which replaces the
+d outcome-ranked estimator by a two-step estimator of the effect at a
+d quantile; see the repository README before using 1.3 for new work.
+d
+d bkf98I.dta, retrieved by net get, is the Burkina Faso 1998 household
+d survey extract used in the paper and in the help file examples.
+d
+d Requires: Stata version 16
 d
 f gepwreg.ado
 f gepwreg.sthlp
 f gepwreg.dlg
-f BKF98I.dta
+f bkf98I.dta
