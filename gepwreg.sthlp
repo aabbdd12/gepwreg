@@ -753,10 +753,9 @@ Araar, A. (2023). Exploring heterogeneous effects: Quantile models and
 percentile weights regression. {it:PEP Working Paper Series}, 2023-15.
 
 {phang}
-Araar, A. (2026). Percentile weights regression: what the outcome-ranked
-estimator measures, a two-step estimator of the effect at a quantile, and
-inference under complex survey design (version 3).  Zenodo,
-{browse "https://doi.org/10.5281/zenodo.20315684":10.5281/zenodo.20315684}.
+Araar, A. (2026). Effects at a quantile of the outcome: a two-step
+percentile-weights estimator, with analytical and survey-design inference.
+Zenodo, {browse "https://doi.org/10.5281/zenodo.22845708":10.5281/zenodo.22845708}.
 The reference for the estimators, their standard errors and the survey
 design variance implemented in this version, and the paper to cite for the
 command.
