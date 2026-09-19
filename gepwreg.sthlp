@@ -343,8 +343,17 @@ third moments of the step-1 residual, one variance per heterogeneity variable.
 Identification comes from the skewness of the heterogeneity variable, or from
 its correlation with the regressors; a symmetric variable uncorrelated with
 {it:indepvars} carries no information about the error, and the correction then
-abstains.  This is the identification of Ben-Moshe, D'Haultfoeuille and Lewbel
-(2017), specialised to the step-1 design.
+abstains.  The idea that the variance of a
+classical measurement error can be recovered from higher moments of the data,
+with no instrument and no validation sample, is the one that inspired these
+conditions: see Erickson and Whited (2002) for the errors-in-variables model
+and Ben-Moshe, D'Haultfoeuille and Lewbel (2017) for additive and polynomial
+models of a mismeasured regressor.  The conditions used here are not theirs.
+Theirs are conditional covariances given the correctly measured regressor,
+and require the latent mismeasured regressor to be independent of it once a
+conditional mean is removed; these are unconditional moments of a
+least-squares residual, one for the constant and one for each regressor,
+separable from one heterogeneity variable to the next.
 
 {pmore}
 When it activates.  For each heterogeneity variable the command forms
@@ -753,9 +762,19 @@ design variance implemented in this version, and the paper to cite for the
 command.
 
 {phang}
+Ben-Moshe, D., D'Haultfoeuille, X., and Lewbel, A. (2017). Identification of
+additive and polynomial models of mismeasured regressors without instruments.
+{it:Journal of Econometrics}, 200(2):207-222.
+
+{phang}
 Deville, J.-C. (1999). Variance estimation for complex statistics and
 estimators: Linearization and residual techniques.
 {it:Survey Methodology}, 25(2):193-203.
+
+{phang}
+Erickson, T. and Whited, T. M. (2002). Two-step GMM estimation of the
+errors-in-variables model using high-order moments. {it:Econometric Theory},
+18(3):776-799.
 
 {phang}
 Firpo, S., Fortin, N. M., and Lemieux, T. (2009). Unconditional quantile
