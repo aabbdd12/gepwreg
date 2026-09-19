@@ -57,6 +57,8 @@ tables are never built from a partial run.
 The paper's LaTeX source and its figures. The estimates are the object of this
 folder; the typesetting is not.
 
-The random seeds are set inside each file, so the Monte Carlo results
+The Monte Carlo files set their own seed. `p7_burkina.do` and
+`p7d_tableD.do` set none and do not need one: `gepwreg` seeds its own
+bootstrap, `rseed()` being 12345 unless you change it. Either way the results
 reproduce exactly on the same Stata version. Across major Stata versions the
 random-number stream can differ; the conclusions do not depend on it.
