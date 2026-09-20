@@ -13,14 +13,14 @@ authors:
     email: aabd@ecn.ulaval.ca
 preferred-citation:
   type: report
-  title: "Effects at a quantile of the outcome: a two-step percentile-weights estimator, with analytical and survey-design inference"
+  title: "Exploring Heterogeneous Effects: Quantile Models and Percentile Weights Regression"
   authors:
     - family-names: Araar
       given-names: Abdelkrim
   year: 2026
   publisher:
     name: Zenodo
-  doi: 10.5281/zenodo.22845707
+  doi: 10.5281/zenodo.20315684
 keywords:
   - Stata
   - percentile weights regression
