@@ -16,8 +16,20 @@ net get     gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/v1
 
 The second line also brings `bkf98I.dta`, the Burkina Faso 1998 household
 survey extract the application uses. Put it in the folder you run from.
-`p4_twostep_vs_rif.do` compares against `rifhdreg`, which is not part of this
-package (`ssc install rifhdreg`); that file is the only one that needs it.
+`p3_replications.do`, `p4_twostep_vs_rif.do` and `p7_burkina.do` compare
+against `rifhdreg` of Rios-Avila (2020), which is not part of this package:
+
+```stata
+ssc install rif
+```
+
+The command comes from the SSC package `rif`, not from a package of its own
+name, and **the version matters**: SSC installs `rifhdreg 2.55` (August 2021),
+which is the one these results were produced with. The Stata Journal archive
+of the same article still ships version 2.5 (July 2019), whose header records
+a bug in the definition of the estimation sample — the very thing a comparison
+of two estimators on one sample depends on. Each of the three files begins
+with `which rifhdreg`, which prints the version it found.
 
 Each programme begins with `which gepwreg` and it must report **v1.4**. With
 any other version the numbers will not be the ones in the paper — 1.3
@@ -44,7 +56,9 @@ Run each file from the folder that contains it. The results are written to
 | `p7d_tableD.do` | 7 | `p7_tableD.csv` | about 10 min |
 
 `p5` and `p6` are Monte Carlo experiments and are the slow ones. `p7d`
-rebuilds Table D alone, without rerunning the whole application.
+rebuilds Table D alone, without rerunning the whole application: it runs the
+same code as the Table D section of `p7_burkina.do` and writes the same
+`p7_tableD.csv`, byte for byte, which is a check in itself.
 
 Then, with Python 3:
 
@@ -59,8 +73,9 @@ tables are never built from a partial run.
 
 ## The checks and the derivations
 
-These print their results; `p8_merr.do` also writes one CSV. They are what the paper
-rests on where it does not report a table.
+These print their results; `p8_merr.do` and `p9_merr_curvature.do` also write
+a CSV each. They are what the paper rests on where it does not report a
+table.
 
 | file | section | what it establishes | time |
 |---|---|---|---|
@@ -81,9 +96,18 @@ measured on one machine and are indicative.
 
 The Monte Carlo files set their own seed. `p7_burkina.do` and
 `p7d_tableD.do` set none and do not need one: `gepwreg` seeds its own
-bootstrap, `rseed()` being 12345 unless you change it. Either way the results
-reproduce exactly on the same Stata version. Across major Stata versions the
-random-number stream can differ; the conclusions do not depend on it.
+bootstrap, `rseed()` being 12345 unless you change it. Across major Stata
+versions the random-number stream can differ; the conclusions do not depend
+on it.
+
+What reproduces, and how exactly. Every coefficient in this package returns
+to the last bit, and so does every bootstrap standard error: Tables B and D
+of the application, which carry ten bootstrap standard errors at B = 200 and
+B = 50, come back identical byte for byte. The analytical standard errors can
+move a little — by a few parts in a million for the Taylor standard errors of
+Table A, and in the third decimal for the profile along household size of
+Table C, where eight of the forty entries round differently. No coefficient
+and no conclusion of the paper depends on that.
 
 One number deserves its own warning. The standard error of a bootstrap
 standard error is about 1/√(2B) — five percent at B = 200. Where the paper

@@ -36,6 +36,18 @@ clear all
 set more off
 which gepwreg
 capture mkdir "results"
+
+* This file compares against RIF regression, which needs rifhdreg.  It is not
+* part of the gepwreg package: it belongs to the SSC module rif, and the line
+* below installs it if it is missing.  The version these results were produced
+* with is 2.55 of August 2021; the copy archived with the Stata Journal
+* article is an earlier one, 2.5, whose header records a bug in the definition
+* of the estimation sample.
+capture which rifhdreg
+if _rc {
+    display as text "rifhdreg not found -- installing the SSC module rif"
+    ssc install rif
+}
 which rifhdreg
 
 * ---------------------------------------------------------------------------
