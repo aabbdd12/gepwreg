@@ -192,19 +192,19 @@ standard errors and the stored results.
 
 Araar, A. (2026). *Effects at a quantile of the outcome: a two-step
 percentile-weights estimator, with analytical and survey-design inference*.
-Zenodo. [10.5281/zenodo.22845708](https://doi.org/10.5281/zenodo.22845708)
+Zenodo. [10.5281/zenodo.22845707](https://doi.org/10.5281/zenodo.22845707)
 
-The source and PDF of the paper (`pwr_paper_rev.tex`, `pwr_paper_rev.pdf`)
-are kept in this repository. The original notes are Araar (2016), *Percentile
-weights regression*, PEP technical note, and Araar (2023), PEP Working Paper
-2023-15.
+The paper is on Zenodo, under the DOI above, and that record is the one to
+read: the repository carries the software, not the writing. The original
+notes are Araar (2016), *Percentile weights regression*, PEP technical note,
+and Araar (2023), PEP Working Paper 2023-15.
 
 ## Citing
 
 ```
 Araar, A. (2026). Effects at a quantile of the outcome: a two-step
 percentile-weights estimator, with analytical and survey-design inference.
-Zenodo. https://doi.org/10.5281/zenodo.22845708
+Zenodo. https://doi.org/10.5281/zenodo.22845707
 ```
 
 A `CITATION.cff` file is included for reference managers. The package itself

@@ -755,7 +755,7 @@ percentile weights regression. {it:PEP Working Paper Series}, 2023-15.
 {phang}
 Araar, A. (2026). Effects at a quantile of the outcome: a two-step
 percentile-weights estimator, with analytical and survey-design inference.
-Zenodo, {browse "https://doi.org/10.5281/zenodo.22845708":10.5281/zenodo.22845708}.
+Zenodo, {browse "https://doi.org/10.5281/zenodo.22845707":10.5281/zenodo.22845707}.
 The reference for the estimators, their standard errors and the survey
 design variance implemented in this version, and the paper to cite for the
 command.
@@ -802,6 +802,14 @@ hypothesis testing. In Engle, R. F. and McFadden, D. (Eds.),
 Rios-Avila, F. (2020). Recentered influence functions (RIFs) in Stata:
 RIF regression and RIF decomposition.
 {it:The Stata Journal}, 20(1):51-94.
+
+{phang}
+Rios-Avila, F. (2018). {cmd:rif}: Stata module to compute recentered
+influence functions (RIF): RIF-regression and RIF-decomposition.
+{it:Statistical Software Components} S458577, Boston College Department of
+Economics, revised 22 August 2021.  {cmd:ssc install rif} provides
+{cmd:rifhdreg}; the copy archived with the Stata Journal article above is an
+earlier version.
 
 {phang}
 Silverman, B. W. (1986).

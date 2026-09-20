@@ -22,7 +22,7 @@ d procedure.  The bandwidth of every estimator is the MSE-optimal plug-in
 d of Araar (2026); silverman and band() override it.  The kernel-weighted
 d regression on outcome-ranked units of the
 d earlier versions is kept as a descriptive option (rankdep); see the help
-d file and Araar (2026, doi:10.5281/zenodo.22845708).
+d file and Araar (2026, doi:10.5281/zenodo.22845707).
 d With het(varlist), merr corrects step 1 for classical measurement error
 d in the heterogeneity variables: one error variance per variable,
 d identified from the third moments of the step-1 residual, applied only
