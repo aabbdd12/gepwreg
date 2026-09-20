@@ -190,16 +190,29 @@ standard errors and the stored results.
 
 ## Documentation
 
+One paper per version, and they are different papers.
+
+**Version 1.4**, the `v14` branch:
+
 Araar, A. (2026). *Effects at a quantile of the outcome: a two-step
 percentile-weights estimator, with analytical and survey-design inference*.
 Zenodo. [10.5281/zenodo.22845707](https://doi.org/10.5281/zenodo.22845707)
 
-The paper is on Zenodo, under the DOI above, and that record is the one to
-read: the repository carries the software, not the writing. The original
-notes are Araar (2016), *Percentile weights regression*, PEP technical note,
-and Araar (2023), PEP Working Paper 2023-15.
+**Version 1.3**, the `main` branch:
+
+Araar, A. (2026). *Exploring Heterogeneous Effects: Quantile Models and
+Percentile Weights Regression*. Zenodo.
+[10.5281/zenodo.20315684](https://doi.org/10.5281/zenodo.20315684)
+
+Those records are what to read: the repository carries the software, not the
+writing. The first DOI stands for all versions of its record and resolves to
+the latest; the second points at the fixed version that documents 1.3. The
+earlier statements of the method are Araar (2016), *Percentile weights
+regression*, PEP technical note, and Araar (2023), PEP Working Paper 2023-15.
 
 ## Citing
+
+For version 1.4:
 
 ```
 Araar, A. (2026). Effects at a quantile of the outcome: a two-step
@@ -207,8 +220,16 @@ percentile-weights estimator, with analytical and survey-design inference.
 Zenodo. https://doi.org/10.5281/zenodo.22845707
 ```
 
-A `CITATION.cff` file is included for reference managers. The package itself
-is version 1.4 at https://github.com/aabbdd12/gepwreg.
+For results obtained with version 1.3:
+
+```
+Araar, A. (2026). Exploring Heterogeneous Effects: Quantile Models and
+Percentile Weights Regression. Zenodo. https://doi.org/10.5281/zenodo.20315684
+```
+
+A `CITATION.cff` file is included for reference managers; on each branch it
+carries that branch's version and its paper. The package itself is at
+https://github.com/aabbdd12/gepwreg.
 
 ## License
 
