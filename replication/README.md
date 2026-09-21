@@ -36,8 +36,8 @@ any other version the numbers will not be the ones in the paper — 1.3
 estimates a different object, and later versions may change the bandwidth or
 the variance.
 
-Three of the programmes are in Python and need `numpy`; `pwr_exact_truth.py`
-also needs `scipy`. `make_tables.py` needs neither.
+Five of the programmes are in Python and need `numpy`; `pwr_exact_truth.py`
+and `p10_rif_gap.py` also need `scipy`. `make_tables.py` needs neither.
 
 ## The tables of the paper
 
@@ -54,9 +54,11 @@ Run each file from the folder that contains it. The results are written to
 | `p6_svy_mc.do` | 6 | `p6_svy.csv` | long |
 | `p7_burkina.do` | 7 | `p7_tableA.csv` … `p7_tableD.csv` | 20–30 min |
 | `p7d_tableD.do` | 7 | `p7_tableD.csv` | about 10 min |
+| `p10_rif_gap.py` | 4 | `p10_rif_gap.csv` | about 1 min |
 
-`p5` and `p6` are Monte Carlo experiments and are the slow ones. `p7d`
-rebuilds Table D alone, without rerunning the whole application: it runs the
+`p10_rif_gap.py` is Python, not Stata, and has to run before
+`make_tables.py` like the rest. `p5` and `p6` are Monte Carlo experiments and
+are the slow ones. `p7d` rebuilds Table D alone, without rerunning the whole application: it runs the
 same code as the Table D section of `p7_burkina.do` and writes the same
 `p7_tableD.csv`, byte for byte, which is a check in itself.
 
@@ -88,8 +90,8 @@ table.
 | `p9_merr_curvature.do` | 5 | the limit: the correction fires on a variable with no error but a curved effect; writes `results/p9_merr_curvature.csv` | about 1 min |
 | `p8_truth.py` | 5 | the values of θ(0.75) the two files above compare against, with their convergence tables | about 2 min |
 
-`pwr_bandwidth_variance.py` imports from `pwr_bandwidth_check.py`, so the
-three Python programmes must stay in the same folder. The times above were
+`pwr_bandwidth_variance.py` imports from `pwr_bandwidth_check.py`, so those
+two must stay in the same folder. The times above were
 measured on one machine and are indicative.
 
 ## On the numbers

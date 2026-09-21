@@ -33,6 +33,7 @@ SOURCE = {
     "p7_tableB.csv": "p7_burkina.do",
     "p7_tableC.csv": "p7_burkina.do",
     "p7_tableD.csv": "p7_burkina.do or p7d_tableD.do",
+    "p10_rif_gap.csv": "p10_rif_gap.py",
 }
 _missing = [c for c in SOURCE if not os.path.exists(os.path.join(RES, c))]
 if _missing:
@@ -423,6 +424,50 @@ else:
                      f"{f4(r['urban_at_quantile_of_lexp'])} \\\\")
 lines += [r"\bottomrule", r"\end{tabular}"]
 write("t_p7_initial.tex", "\n".join(lines) + "\n")
+
+# ---------------------------------------------------------------------------
+# Table: where a RIF regression is exact and where it is not (p10_rif_gap.csv)
+# ---------------------------------------------------------------------------
+rows = read("p10_rif_gap.csv")
+taus = sorted({fl(r["tau"]) for r in rows})
+xorder = ["normal", "uniform", "Student t(5)", "chi-square(3)",
+          "exponential", "lognormal"]
+tex = {"Student t(5)": "Student $t_5$", "chi-square(3)": r"$\chi^2_3$"}
+lines = [r"\begin{tabular}{l" + "r" * len(taus) + "}", r"\toprule",
+         "Law of $x$ & " + " & ".join(f"${t:.2f}$" for t in taus) + r" \\",
+         r"\midrule"]
+for u_law, head in (("normal", "RIF-OLS, Gaussian error"),
+                    ("lognormal",
+                     "RIF-OLS, skewed error (lognormal, skewness 4.75)")):
+    sub = [r for r in rows if r["u_law"] == u_law]
+    lines.append(r"\multicolumn{%d}{l}{\emph{%s}} \\" % (len(taus) + 1, head))
+    for x_law in xorder:
+        cell = {fl(r["tau"]): fl(r["rif_gap_pct"]) for r in sub
+                if r["x_law"] == x_law}
+        if not cell:
+            continue
+        lines.append(tex.get(x_law, x_law) + " & " + " & ".join(
+            f"{0.0 if abs(cell[t]) < 0.05 else cell[t]:.1f}" for t in taus)
+            + r" \\")
+    # the two-step estimator.  It returns the true effect for every law here,
+    # so it is one row rather than six -- but only if the numbers say so: if
+    # any entry moved, print them law by law instead of collapsing them.
+    two = {(r["x_law"], fl(r["tau"])): fl(r["twostep_gap_pct"]) for r in sub}
+    lines.append(r"\addlinespace")
+    if all(abs(v) < 0.05 for v in two.values()):
+        lines.append(r"\emph{PWR-2}, any law & " +
+                     " & ".join("0.0" for _ in taus) + r" \\")
+    else:
+        for x_law in xorder:
+            cell = {t: two[(x_law, t)] for t in taus if (x_law, t) in two}
+            if cell:
+                lines.append(r"\emph{PWR-2}, " + tex.get(x_law, x_law) +
+                             " & " + " & ".join(f"{cell[t]:.1f}" for t in taus)
+                             + r" \\")
+    if u_law == "normal":
+        lines.append(r"\addlinespace")
+lines += [r"\bottomrule", r"\end{tabular}"]
+write("t_p10_rifgap.tex", "\n".join(lines) + "\n")
 
 # ---------------------------------------------------------------------------
 # Table: the dispersion of the group at tau, Burkina (p8_dispersion.csv)
