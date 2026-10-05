@@ -1,0 +1,51 @@
+model,quantity,coefficient,value
+het(urban size),b at per(0.25),size,-.0612664378332255
+het(urban size),se at per(0.25),size,.0022749924456787
+het(urban size),b of the reference,size,-.077823516709931
+het(urban size),se of the reference,size,.0028011863273885
+het(urban size),p constant across tau,size,.0000999900009999
+het(urban size),b at per(0.25),male,.209657931952005
+het(urban size),se at per(0.25),male,.0797981622117094
+het(urban size),b of the reference,male,.1570995477880887
+het(urban size),se of the reference,male,.0577964374264476
+het(urban size),p constant across tau,male,.1175882411758824
+het(urban size),b at per(0.25),5.gse,-.7769649270525992
+het(urban size),se at per(0.25),5.gse,.0799397294855754
+het(urban size),b of the reference,5.gse,-.8511569617834074
+het(urban size),se of the reference,5.gse,.0764387493045588
+het(urban size),p constant across tau,5.gse,.0000999900009999
+het(urban size),b at per(0.25),urban,.3506468670766433
+het(urban size),se at per(0.25),urban,.0485496637787738
+het(urban size),b of the reference,urban,.3360928176874906
+het(urban size),se of the reference,urban,.0447660191627961
+het(urban size),p constant across tau,urban,.5923407659234077
+het(urban size),mean at per(0.25),urban,.0827040156516178
+het(urban size),mean in the population,urban,.2258242552797113
+het(urban size),mean at per(0.25),size,9.45923477420342
+het(urban size),mean in the population,size,7.575569597681538
+het(qr),b at per(0.25),size,-.0431377045743542
+het(qr),se at per(0.25),size,.0023461729352001
+het(qr),b of the reference,size,-.0432255967192904
+het(qr),se of the reference,size,.002744662236935
+het(qr),p constant across tau,size,.6666666666666666
+het(qr),p constant across tau (reference),size,.7647058823529411
+het(qr),b at per(0.25),male,-.0196891172194168
+het(qr),se at per(0.25),male,.0389205193781452
+het(qr),b of the reference,male,-.0160637564370089
+het(qr),se of the reference,male,.0467060959137872
+het(qr),p constant across tau,male,.196078431372549
+het(qr),p constant across tau (reference),male,.2549019607843137
+het(qr),b at per(0.25),5.gse,-.8996611142663513
+het(qr),se at per(0.25),5.gse,.050767799855132
+het(qr),b of the reference,5.gse,-.9164019583895758
+het(qr),se of the reference,5.gse,.0574624890589219
+het(qr),p constant across tau,5.gse,.0392156862745098
+het(qr),p constant across tau (reference),5.gse,.0588235294117647
+het(qr),b at per(0.25),urban,.269368132747219
+het(qr),se at per(0.25),urban,.039218515734618
+het(qr),b of the reference,urban,.256460387423427
+het(qr),se of the reference,urban,.0436529865849383
+het(qr),p constant across tau,urban,.1568627450980392
+het(qr),p constant across tau (reference),urban,.2549019607843137
+het(qr),conditional rank of the reference at per(0.25),,.2980897944184765
+het(qr),reference held at the end of the grid from tau,,.825

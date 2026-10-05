@@ -1,0 +1,3458 @@
+-------------------------------------------------------------------------------
+      name:  _p13
+       log:  C:\Users\aabd\AppData\Local\Temp\claude\C--dev-aura\a5dddb67-b624-
+> 4b3e-80fc-fa46263e876d\scratchpad\gp\rep_check\results/p13_profile_delta.log
+  log type:  text
+ opened on:   5 Oct 2026, 12:39:04
+
+. do p13a_E_draws dgp
+
+. * p13a_E_draws.do -- called by p13_profile_delta.do (Paper, version 5,
+. * Section 7.5): the estimator E of the effect for a given household under
+. * het(qr), its delta-method standard error with the Powell kernel density
+. * (as qreg vce(robust, kernel)) on the sample, and B = 200 bootstrap draws in
+. * which the whole estimator is re-run (the 19 quantile regressions, q_tau,
+. * the reference type, u*, E), with no standard error in the draws.
+. * Argument: what [chunk]
+. *   dgp         the perfect case, beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5 + 3
+> u,
+. *               n = 2000, tau = 0.25: point, the 200 draws and the report;
+. *   bkf c       Burkina (bkf98I.dta), lexp on size male urban i.gse,
+. *               unweighted, tau = 0.25: chunk c of 3 of the 200 draws (seed
+. *               777 + c); chunk 1 also computes the point;
+. *   bkfreport   combines the Burkina chunks and reports.
+. * Reference household: the default real type (continuous regressors at their
+. * mean, binary ones at their most frequent value, a factor at its most
+. * frequent level), recomputed in every draw; in the DGP also the type (5, 1).
+. * It does not call gepwreg: the estimator is programmed here, with official
+. * quantile regressions.  The draws are saved in results/ for p13b.
+. version 16
+
+. clear all
+
+. args what chunk
+
+. set more off
+
+. set varabbrev off
+
+. local OUT "results"
+
+. capture mkdir "results"
+
+. local tau 0.25
+
+. local B   200
+
+. local nch 3
+
+. global TAU `tau'
+
+. numlist "0.05(0.05)0.95"
+
+. global UG `r(numlist)'
+
+. 
+. mata:
+------------------------------------------------- mata (type end to exit) -----
+: real matrix _qr_psi(real matrix Xt, real colvector r, real colvector kv,
+>                     real scalar kb, real scalar u)
+> {
+>     real matrix    H
+>     real colvector s
+>     H = invsym(quadcross(Xt, kv, Xt) / kb)
+>     s = (u :- (r :< 0)) :* (abs(r) :>= 1e-10)
+>     return((Xt :* s) * H)
+> }
+
+: 
+: real rowvector _E_seg(real matrix G, real rowvector ug, real scalar q,
+>                       real rowvector xt, real scalar ustar, real scalar seg,
+>                       real scalar tt)
+> {
+>     real scalar    ng
+>     real rowvector Qr
+>     ng = cols(ug)
+>     Qr = xt * G'
+>     if (q <= Qr[1]) {
+>         seg = 1
+>         tt  = 0
+>     }
+>     else if (q >= Qr[ng]) {
+>         seg = ng - 1
+>         tt  = 1
+>     }
+>     else {
+>         seg = max(selectindex(Qr :<= q))
+>         tt  = (q - Qr[seg]) / (Qr[seg+1] - Qr[seg])
+>     }
+>     ustar = ug[seg] + tt * (ug[seg+1] - ug[seg])
+>     return((1 - tt) * G[seg, .] + tt * G[seg+1, .])
+> }
+
+: 
+: // block of one reference: E (k), SE (k), slope t (k), u*, segment
+: real rowvector _E_pt(real matrix G, real rowvector ug, real scalar q,
+>                      real rowvector xr)
+> {
+>     real scalar    k, ustar, seg, tt
+>     real rowvector bs
+>     k     = cols(xr)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, (xr, 1), ustar, seg, tt)
+>     return((bs[1..k], J(1, 2*k, .), ustar, seg))
+> }
+
+: 
+: real rowvector _E_ref(real matrix G, real rowvector ug, real scalar q,
+>                       real colvector PSIQ, real matrix X, real rowvector xr,
+>                       real rowvector flag, real colvector KB)
+> {
+>     real scalar    n, k, ustar, seg, tt, D, j, clip
+>     real rowvector xt, bs, xbar, out, Qr
+>     real matrix    Xt, P1, P2, Pstar
+>     real colvector core, psi, dd
+>     n  = rows(X)
+>     k  = cols(X)
+>     Xt = (X, J(n, 1, 1))
+>     xt = (xr, 1)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, xt, ustar, seg, tt)
+>     Qr = xt * G'
+>     clip = (q <= Qr[1] | q >= Qr[cols(Qr)])
+>     D  = xt * (G[seg+1, .] - G[seg, .])'
+>     P1 = _qr_psi(Xt, st_data(., "_r" + strofreal(seg)),     st_data(., "_k" +
+>  strofreal(seg)),     KB[seg],     ug[seg])
+>     P2 = _qr_psi(Xt, st_data(., "_r" + strofreal(seg + 1)), st_data(., "_k" +
+>  strofreal(seg + 1)), KB[seg + 1], ug[seg + 1])
+>     Pstar = (1 - tt) * P1 + tt * P2
+>     core  = PSIQ - Pstar * xt'
+>     xbar  = mean(X)
+>     for (j = 1; j <= k; j++) {
+>         if (flag[j]) core = core - ((X[., j] :- xbar[j]) / n) * bs[j]
+>     }
+>     if (clip) core = J(n, 1, 0)
+>     out = J(1, 3*k + 2, .)
+>     for (j = 1; j <= k; j++) {
+>         psi = Pstar[., j] + ((G[seg+1, j] - G[seg, j]) / D) * core
+>         psi = psi :- mean(psi)
+>         out[j]     = bs[j]
+>         out[k + j] = sqrt(quadcross(psi, psi))
+>         dd  = P2[., j] - P1[., j]
+>         dd  = dd :- mean(dd)
+>         out[2*k + j] = (G[seg+1, j] - G[seg, j]) / sqrt(quadcross(dd, dd))
+>     }
+>     out[3*k + 1] = ustar
+>     out[3*k + 2] = seg
+>     return(out)
+> }
+
+: 
+: // _Eres = block of the default reference [, block of the fixed reference]
+: void _E_run(real scalar qh, real scalar qkb, real scalar se)
+> {
+>     real matrix    X, G
+>     real rowvector ug, xr, fl, xf, out
+>     real colvector KB, PSIQ
+>     real scalar    n, tau
+>     G   = st_matrix("_Gr")
+>     ug  = strtoreal(tokens(st_global("UG")))
+>     tau = strtoreal(st_global("TAU"))
+>     xr  = st_matrix("_XR")
+>     fl  = st_matrix("_FL")
+>     xf  = strtoreal(tokens(st_global("XFIX")))
+>     if (se) {
+>         X    = st_data(., tokens(st_global("XV")))
+>         n    = rows(X)
+>         KB   = st_matrix("_KB")
+>         PSIQ = _qr_psi(J(n, 1, 1), st_data(., "_rq"), st_data(., "_kq"), qkb,
+>  tau)
+>         out  = _E_ref(G, ug, qh, PSIQ, X, xr, fl, KB)
+>         if (cols(xf)) out = (out, _E_ref(G, ug, qh, PSIQ, X, xf, J(1, cols(xf
+> ), 0), KB))
+>     }
+>     else {
+>         out = _E_pt(G, ug, qh, xr)
+>         if (cols(xf)) out = (out, _E_pt(G, ug, qh, xf))
+>     }
+>     st_matrix("_Eres", out)
+> }
+
+: 
+: // the default reference type of the DGP: x1 at its mean, x2 at its mode
+: void _ref_dgp()
+> {
+>     real colvector x1, x2
+>     x1 = st_data(., "x1")
+>     x2 = st_data(., "x2")
+>     st_matrix("_XR", (mean(x1), mean(x2) > 0.5))
+>     st_matrix("_FL", (1, 0))
+> }
+
+: 
+: // Burkina: size at its mean, male and urban at their mode, gse at its most
+: // frequent level (dummies g2..g7)
+: void _ref_bkf()
+> {
+>     real colvector s, m, u, g
+>     real rowvector cnt, xr, top
+>     real scalar    l, gm
+>     s = st_data(., "size")
+>     m = st_data(., "male")
+>     u = st_data(., "urban")
+>     g = st_data(., "gse")
+>     cnt = J(1, 7, 0)
+>     for (l = 1; l <= 7; l++) cnt[l] = sum(g :== l)
+>     top = selectindex(cnt :== max(cnt))
+>     gm  = top[1]
+>     xr = (mean(s), mean(m) > 0.5, mean(u) > 0.5)
+>     for (l = 2; l <= 7; l++) xr = (xr, gm == l)
+>     st_matrix("_XR", xr)
+>     st_matrix("_FL", (1, J(1, 8, 0)))
+>     st_numscalar("_gmode", gm)
+> }
+
+: 
+: real colvector _sq(real scalar q, real colvector x1, real colvector x2,
+>                    real scalar s1, real scalar s2)
+> {
+>     real colvector lo, hi, mid, up
+>     real scalar    it
+>     lo = J(rows(x1), 1, 1e-12)
+>     hi = J(rows(x1), 1, 1 - 1e-12)
+>     for (it = 1; it <= 70; it++) {
+>         mid = (lo + hi) :/ 2
+>         up  = (invnormal(mid) + (0.4 :+ s1 :* mid) :* x1 + (0.5 :+ s2 :* mid)
+>  :* x2) :< q
+>         lo  = up :* mid + (1 :- up) :* lo
+>         hi  = up :* hi + (1 :- up) :* mid
+>     }
+>     return((lo + hi) :/ 2)
+> }
+
+: 
+: // truth of the DGP, deterministic: plim E for the default type (5, mode)
+: // then the fixed type (5, 1); also q_tau, u* and beta(u*)
+: real rowvector _truth(real scalar tau, real scalar s1, real scalar s2)
+> {
+>     real scalar    M, it, lo, hi, mid, F, q, mode, ud, uf, us, sg, tt
+>     real colvector x1, p, z0, z1
+>     real rowvector ug, pd, pf
+>     real matrix    Gt
+>     M  = 4000
+>     x1 = 1 :+ 8 :* ((1::M) :- 0.5) :/ M
+>     p  = invlogit(-1 :+ 0.1 :* x1)
+>     z0 = J(M, 1, 0)
+>     z1 = J(M, 1, 1)
+>     mode = (mean(p) > 0.5)
+>     lo = -20
+>     hi = 60
+>     for (it = 1; it <= 70; it++) {
+>         mid = (lo + hi) / 2
+>         F   = mean((1 :- p) :* _sq(mid, x1, z0, s1, s2) + p :* _sq(mid, x1, z
+> 1, s1, s2))
+>         if (F < tau) lo = mid
+>         else         hi = mid
+>     }
+>     q  = (lo + hi) / 2
+>     ud = _sq(q, 5, mode, s1, s2)
+>     uf = _sq(q, 5, 1, s1, s2)
+>     ug = (1..19) :* 0.05
+>     Gt = ((0.4 :+ s1 :* ug)', (0.5 :+ s2 :* ug)', invnormal(ug)')
+>     us = .
+>     sg = .
+>     tt = .
+>     pd = _E_seg(Gt, ug, q, (5, mode, 1), us, sg, tt)
+>     pf = _E_seg(Gt, ug, q, (5, 1, 1), us, sg, tt)
+>     return((pd[1], pd[2], pf[1], pf[2], q, ud, uf, 0.4 + s1*ud, 0.5 + s2*ud, 
+> 0.4 + s1*uf, 0.5 + s2*uf))
+> }
+
+: 
+: // report: E0 the point row, TT the draws, names of the coefficients, nref
+: // blocks, plim (empty if unknown), labels of the references
+: void _report(real rowvector E0, real matrix TT, string rowvector names,
+>              real scalar nref, real rowvector plim, string rowvector rlab)
+> {
+>     real scalar    k, r, j, B, base, ie, sd, rob, cr
+>     real colvector e, srt
+>     k = cols(names)
+>     B = rows(TT)
+>     for (r = 1; r <= nref; r++) {
+>         base = (r - 1) * (3*k + 2)
+>         printf("\n  reference: %s -- u* %6.4f (segment %g), draws whose segme
+> nt changed: %4.1f%%\n",
+>                rlab[r], E0[base + 3*k + 1], E0[base + 3*k + 2], 100 * mean(TT
+> [., base + 3*k + 2] :!= E0[base + 3*k + 2]))
+>         if (cols(plim)) printf("  coefficient     point     plim      t   SE_
+> anal   SD_boot  robust SD  anal/SD  anal/rob  slope t\n")
+>         else            printf("  coefficient     point   SE_anal   SD_boot  
+> robust SD  anal/SD  anal/rob  slope t\n")
+>         for (j = 1; j <= k; j++) {
+>             ie  = base + j
+>             e   = TT[., ie]
+>             sd  = sqrt(variance(e))
+>             srt = sort(e, 1)
+>             rob = (srt[ceil(0.75*B)] - srt[ceil(0.25*B)]) / 1.349
+>             if (cols(plim)) {
+>                 printf("  %-12s %8.4f %8.4f %6.2f  %8.4f  %8.4f  %8.4f   %6.3
+> f   %6.3f   %6.2f\n",
+>                        names[j], E0[ie], plim[(r-1)*k + j], (E0[ie] - plim[(r
+> -1)*k + j]) / E0[ie + k],
+>                        E0[ie + k], sd, rob, E0[ie + k] / sd, E0[ie + k] / rob
+> , E0[ie + 2*k])
+>             }
+>             else {
+>                 printf("  %-12s %8.4f  %8.4f  %8.4f  %8.4f   %6.3f   %6.3f   
+> %6.2f\n",
+>                        names[j], E0[ie], E0[ie + k], sd, rob, E0[ie + k] / sd
+> , E0[ie + k] / rob, E0[ie + 2*k])
+>             }
+>         }
+>     }
+> }
+note: variable cr unused.
+
+: end
+-------------------------------------------------------------------------------
+
+. 
+. * every step of E on the data in memory -> matrix _Eres; se: 1 = with the
+. * analytic SE, 0 = the value only (the draws)
+. capture program drop _E_full
+
+. program define _E_full
+  1.     args se
+  2.     quietly {
+  3.         local k : word count $XV
+  4.         local ng : word count $UG
+  5.         matrix _Gr = J(`ng', `k' + 1, .)
+  6.         matrix _KB = J(`ng', 1, .)
+  7.         local g 0
+  8.         foreach u of global UG {
+  9.             local ++g
+ 10.             if `se' {
+ 11.                 capture qreg $Y $XV, quantile(`u') vce(robust, kernel)
+ 12.                 if _rc qreg $Y $XV, quantile(`u') vce(robust, kernel) iter
+> ate(5000)
+ 13.             }
+ 14.             else {
+ 15.                 capture _qreg $Y $XV, quant(`u')
+ 16.                 if _rc _qreg $Y $XV, quant(`u') iterate(5000)
+ 17.             }
+ 18.             local j 0
+ 19.             local xb 0
+ 20.             foreach v of global XV {
+ 21.                 local ++j
+ 22.                 matrix _Gr[`g', `j'] = _b[`v']
+ 23.             }
+ 24.             matrix _Gr[`g', `k' + 1] = _b[_cons]
+ 25.             if `se' {
+ 26.                 local kb = e(kbwidth)
+ 27.                 matrix _KB[`g', 1] = `kb'
+ 28.                 capture drop _r`g' _k`g'
+ 29.                 predict double _r`g', residuals
+ 30.                 * qreg's Epanechnikov kernel (_qreg_kernel, private to qre
+> g.ado)
+.                 generate double _k`g' = 0.75*(1 - 0.2*(_r`g'/`kb')^2)/sqrt(5)
+>  * (abs(_r`g'/`kb') < sqrt(5))
+ 31.             }
+ 32.         }
+ 33.         local qkb 0
+ 34.         if `se' {
+ 35.             capture qreg $Y, quantile($TAU) vce(robust, kernel)
+ 36.             if _rc qreg $Y, quantile($TAU) vce(robust, kernel) iterate(500
+> 0)
+ 37.             local qh  = _b[_cons]
+ 38.             local qkb = e(kbwidth)
+ 39.             capture drop _rq _kq
+ 40.             generate double _rq = $Y - `qh'
+ 41.             generate double _kq = 0.75*(1 - 0.2*(_rq/`qkb')^2)/sqrt(5) * (
+> abs(_rq/`qkb') < sqrt(5))
+ 42.         }
+ 43.         else {
+ 44.             capture _qreg $Y, quant($TAU)
+ 45.             if _rc _qreg $Y, quant($TAU) iterate(5000)
+ 46.             local qh = _b[_cons]
+ 47.         }
+ 48.         * the default reference type, from this sample
+.         mata: _ref_$REFTYPE()
+ 49.         mata: _E_run(`qh', `qkb', `se')
+ 50.         if `se' drop _r* _k*
+ 51.     }
+ 52. end
+
+. 
+. capture program drop _dgp
+
+. program define _dgp
+  1.     args nobs s1 s2
+  2.     quietly {
+  3.         set obs `nobs'
+  4.         generate double x1 = 1 + 8*runiform()
+  5.         generate double x2 = runiform() < invlogit(-1 + 0.1*x1)
+  6.         generate double u  = runiform()
+  7.         generate double y  = invnormal(u) + (0.4 + `s1'*u)*x1 + (0.5 + `s2
+> '*u)*x2
+  8.         drop u
+  9.     }
+ 10. end
+
+. 
+. capture program drop _bkf_data
+
+. program define _bkf_data
+  1.     use bkf98I, clear
+  2.     quietly {
+  3.         generate double lexp = ln(exppc)
+  4.         generate byte male  = (sex == 1)
+  5.         generate byte urban = (zone == 2)
+  6.         forvalues l = 2/7 {
+  7.             generate byte g`l' = (gse == `l')
+  8.         }
+  9.         keep lexp size male urban gse g2-g7
+ 10.         keep if !missing(lexp, size, male, urban, gse)
+ 11.     }
+ 12. end
+
+. 
+. * ---- the perfect case -----------------------------------------------------
+> -------------
+. if "`what'" == "dgp" {
+.     global Y y
+.     global XV x1 x2
+.     global XFIX 5 1
+.     global REFTYPE dgp
+.     mata: TR = _truth(`tau', 2, 3)
+.     mata: printf("\ntruth: q_tau %8.4f; default type (5, 0): u* %6.4f, beta(u
+> *) (%7.4f, %7.4f), plim E (%7.4f, %7.4f)\n", TR[5], TR[6], TR[8], TR[9], TR[1
+> ], TR[2])
+
+truth: q_tau   3.3127; default type (5, 0): u* 0.2114, beta(u*) ( 0.8228,  1.13
+> 43), plim E ( 0.8231,  1.1347)
+.     mata: printf("       fixed type (5, 1): u* %6.4f, beta(u*) (%7.4f, %7.4f)
+> , plim E (%7.4f, %7.4f)\n", TR[7], TR[10], TR[11], TR[3], TR[4])
+       fixed type (5, 1): u* 0.1442, beta(u*) ( 0.6884,  0.9326), plim E ( 0.68
+> 87,  0.9331)
+.     set seed 1
+.     _dgp 2000 2 3
+.     _E_full 1
+.     matrix E0 = _Eres
+.     keep y x1 x2
+.     matrix TT = J(`B', colsof(E0), .)
+.     set seed 777
+.     timer clear 1
+.     timer on 1
+.     forvalues b = 1/`B' {
+  2.         preserve
+  3.         bsample
+  4.         _E_full 0
+  5.         restore
+  6.         matrix TT[`b', 1] = _Eres
+  7.     }
+.     timer off 1
+.     quietly timer list 1
+.     di as text "bootstrap time: " as result %6.1f r(t1) as text " s"
+bootstrap time:   19.0 s
+.     di as text _n "==== perfect case: beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5
+>  + 3u, n = 2000, tau = `tau', B = `B'"
+
+==== perfect case: beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5 + 3u, n = 2000, tau 
+> = 0.25, B = 200
+.     mata: _report(st_matrix("E0"), st_matrix("TT"), ("x1", "x2"), 2, TR[1..4]
+> , ("default type (x1 mean, x2 mode)", "fixed type (5, 1)"))
+
+  reference: default type (x1 mean, x2 mode) -- u* 0.2116 (segment 4), draws wh
+> ose segment changed: 13.5%
+  coefficient     point     plim      t   SE_anal   SD_boot  robust SD  anal/SD
+>   anal/rob  slope t
+  x1             0.8016   0.8231  -0.45    0.0476    0.0420    0.0422    1.133 
+>    1.129     3.41
+  x2             1.5653   1.1347   1.44    0.2990    0.2881    0.2883    1.038 
+>    1.037     1.05
+
+  reference: fixed type (5, 1) -- u* 0.1346 (segment 2), draws whose segment ch
+> anged: 14.0%
+  coefficient     point     plim      t   SE_anal   SD_boot  robust SD  anal/SD
+>   anal/rob  slope t
+  x1             0.6198   0.6887  -1.42    0.0484    0.0455    0.0471    1.064 
+>    1.028     1.77
+  x2             1.1077   0.9331   0.96    0.1812    0.2037    0.1871    0.890 
+>    0.968     3.39
+.     preserve
+.     clear
+.     quietly svmat double TT, names(c)
+.     save "`OUT'/p13_dgp_draws.dta", replace
+(file results/p13_dgp_draws.dta not found)
+file results/p13_dgp_draws.dta saved
+.     restore
+.     exit
+
+end of do-file
+
+. forvalues c = 1/3 {
+  2.     do p13a_E_draws bkf `c'
+  3. }
+
+. * p13a_E_draws.do -- called by p13_profile_delta.do (Paper, version 5,
+. * Section 7.5): the estimator E of the effect for a given household under
+. * het(qr), its delta-method standard error with the Powell kernel density
+. * (as qreg vce(robust, kernel)) on the sample, and B = 200 bootstrap draws in
+. * which the whole estimator is re-run (the 19 quantile regressions, q_tau,
+. * the reference type, u*, E), with no standard error in the draws.
+. * Argument: what [chunk]
+. *   dgp         the perfect case, beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5 + 3
+> u,
+. *               n = 2000, tau = 0.25: point, the 200 draws and the report;
+. *   bkf c       Burkina (bkf98I.dta), lexp on size male urban i.gse,
+. *               unweighted, tau = 0.25: chunk c of 3 of the 200 draws (seed
+. *               777 + c); chunk 1 also computes the point;
+. *   bkfreport   combines the Burkina chunks and reports.
+. * Reference household: the default real type (continuous regressors at their
+. * mean, binary ones at their most frequent value, a factor at its most
+. * frequent level), recomputed in every draw; in the DGP also the type (5, 1).
+. * It does not call gepwreg: the estimator is programmed here, with official
+. * quantile regressions.  The draws are saved in results/ for p13b.
+. version 16
+
+. clear all
+
+. args what chunk
+
+. set more off
+
+. set varabbrev off
+
+. local OUT "results"
+
+. capture mkdir "results"
+
+. local tau 0.25
+
+. local B   200
+
+. local nch 3
+
+. global TAU `tau'
+
+. numlist "0.05(0.05)0.95"
+
+. global UG `r(numlist)'
+
+. 
+. mata:
+------------------------------------------------- mata (type end to exit) -----
+: real matrix _qr_psi(real matrix Xt, real colvector r, real colvector kv,
+>                     real scalar kb, real scalar u)
+> {
+>     real matrix    H
+>     real colvector s
+>     H = invsym(quadcross(Xt, kv, Xt) / kb)
+>     s = (u :- (r :< 0)) :* (abs(r) :>= 1e-10)
+>     return((Xt :* s) * H)
+> }
+
+: 
+: real rowvector _E_seg(real matrix G, real rowvector ug, real scalar q,
+>                       real rowvector xt, real scalar ustar, real scalar seg,
+>                       real scalar tt)
+> {
+>     real scalar    ng
+>     real rowvector Qr
+>     ng = cols(ug)
+>     Qr = xt * G'
+>     if (q <= Qr[1]) {
+>         seg = 1
+>         tt  = 0
+>     }
+>     else if (q >= Qr[ng]) {
+>         seg = ng - 1
+>         tt  = 1
+>     }
+>     else {
+>         seg = max(selectindex(Qr :<= q))
+>         tt  = (q - Qr[seg]) / (Qr[seg+1] - Qr[seg])
+>     }
+>     ustar = ug[seg] + tt * (ug[seg+1] - ug[seg])
+>     return((1 - tt) * G[seg, .] + tt * G[seg+1, .])
+> }
+
+: 
+: // block of one reference: E (k), SE (k), slope t (k), u*, segment
+: real rowvector _E_pt(real matrix G, real rowvector ug, real scalar q,
+>                      real rowvector xr)
+> {
+>     real scalar    k, ustar, seg, tt
+>     real rowvector bs
+>     k     = cols(xr)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, (xr, 1), ustar, seg, tt)
+>     return((bs[1..k], J(1, 2*k, .), ustar, seg))
+> }
+
+: 
+: real rowvector _E_ref(real matrix G, real rowvector ug, real scalar q,
+>                       real colvector PSIQ, real matrix X, real rowvector xr,
+>                       real rowvector flag, real colvector KB)
+> {
+>     real scalar    n, k, ustar, seg, tt, D, j, clip
+>     real rowvector xt, bs, xbar, out, Qr
+>     real matrix    Xt, P1, P2, Pstar
+>     real colvector core, psi, dd
+>     n  = rows(X)
+>     k  = cols(X)
+>     Xt = (X, J(n, 1, 1))
+>     xt = (xr, 1)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, xt, ustar, seg, tt)
+>     Qr = xt * G'
+>     clip = (q <= Qr[1] | q >= Qr[cols(Qr)])
+>     D  = xt * (G[seg+1, .] - G[seg, .])'
+>     P1 = _qr_psi(Xt, st_data(., "_r" + strofreal(seg)),     st_data(., "_k" +
+>  strofreal(seg)),     KB[seg],     ug[seg])
+>     P2 = _qr_psi(Xt, st_data(., "_r" + strofreal(seg + 1)), st_data(., "_k" +
+>  strofreal(seg + 1)), KB[seg + 1], ug[seg + 1])
+>     Pstar = (1 - tt) * P1 + tt * P2
+>     core  = PSIQ - Pstar * xt'
+>     xbar  = mean(X)
+>     for (j = 1; j <= k; j++) {
+>         if (flag[j]) core = core - ((X[., j] :- xbar[j]) / n) * bs[j]
+>     }
+>     if (clip) core = J(n, 1, 0)
+>     out = J(1, 3*k + 2, .)
+>     for (j = 1; j <= k; j++) {
+>         psi = Pstar[., j] + ((G[seg+1, j] - G[seg, j]) / D) * core
+>         psi = psi :- mean(psi)
+>         out[j]     = bs[j]
+>         out[k + j] = sqrt(quadcross(psi, psi))
+>         dd  = P2[., j] - P1[., j]
+>         dd  = dd :- mean(dd)
+>         out[2*k + j] = (G[seg+1, j] - G[seg, j]) / sqrt(quadcross(dd, dd))
+>     }
+>     out[3*k + 1] = ustar
+>     out[3*k + 2] = seg
+>     return(out)
+> }
+
+: 
+: // _Eres = block of the default reference [, block of the fixed reference]
+: void _E_run(real scalar qh, real scalar qkb, real scalar se)
+> {
+>     real matrix    X, G
+>     real rowvector ug, xr, fl, xf, out
+>     real colvector KB, PSIQ
+>     real scalar    n, tau
+>     G   = st_matrix("_Gr")
+>     ug  = strtoreal(tokens(st_global("UG")))
+>     tau = strtoreal(st_global("TAU"))
+>     xr  = st_matrix("_XR")
+>     fl  = st_matrix("_FL")
+>     xf  = strtoreal(tokens(st_global("XFIX")))
+>     if (se) {
+>         X    = st_data(., tokens(st_global("XV")))
+>         n    = rows(X)
+>         KB   = st_matrix("_KB")
+>         PSIQ = _qr_psi(J(n, 1, 1), st_data(., "_rq"), st_data(., "_kq"), qkb,
+>  tau)
+>         out  = _E_ref(G, ug, qh, PSIQ, X, xr, fl, KB)
+>         if (cols(xf)) out = (out, _E_ref(G, ug, qh, PSIQ, X, xf, J(1, cols(xf
+> ), 0), KB))
+>     }
+>     else {
+>         out = _E_pt(G, ug, qh, xr)
+>         if (cols(xf)) out = (out, _E_pt(G, ug, qh, xf))
+>     }
+>     st_matrix("_Eres", out)
+> }
+
+: 
+: // the default reference type of the DGP: x1 at its mean, x2 at its mode
+: void _ref_dgp()
+> {
+>     real colvector x1, x2
+>     x1 = st_data(., "x1")
+>     x2 = st_data(., "x2")
+>     st_matrix("_XR", (mean(x1), mean(x2) > 0.5))
+>     st_matrix("_FL", (1, 0))
+> }
+
+: 
+: // Burkina: size at its mean, male and urban at their mode, gse at its most
+: // frequent level (dummies g2..g7)
+: void _ref_bkf()
+> {
+>     real colvector s, m, u, g
+>     real rowvector cnt, xr, top
+>     real scalar    l, gm
+>     s = st_data(., "size")
+>     m = st_data(., "male")
+>     u = st_data(., "urban")
+>     g = st_data(., "gse")
+>     cnt = J(1, 7, 0)
+>     for (l = 1; l <= 7; l++) cnt[l] = sum(g :== l)
+>     top = selectindex(cnt :== max(cnt))
+>     gm  = top[1]
+>     xr = (mean(s), mean(m) > 0.5, mean(u) > 0.5)
+>     for (l = 2; l <= 7; l++) xr = (xr, gm == l)
+>     st_matrix("_XR", xr)
+>     st_matrix("_FL", (1, J(1, 8, 0)))
+>     st_numscalar("_gmode", gm)
+> }
+
+: 
+: real colvector _sq(real scalar q, real colvector x1, real colvector x2,
+>                    real scalar s1, real scalar s2)
+> {
+>     real colvector lo, hi, mid, up
+>     real scalar    it
+>     lo = J(rows(x1), 1, 1e-12)
+>     hi = J(rows(x1), 1, 1 - 1e-12)
+>     for (it = 1; it <= 70; it++) {
+>         mid = (lo + hi) :/ 2
+>         up  = (invnormal(mid) + (0.4 :+ s1 :* mid) :* x1 + (0.5 :+ s2 :* mid)
+>  :* x2) :< q
+>         lo  = up :* mid + (1 :- up) :* lo
+>         hi  = up :* hi + (1 :- up) :* mid
+>     }
+>     return((lo + hi) :/ 2)
+> }
+
+: 
+: // truth of the DGP, deterministic: plim E for the default type (5, mode)
+: // then the fixed type (5, 1); also q_tau, u* and beta(u*)
+: real rowvector _truth(real scalar tau, real scalar s1, real scalar s2)
+> {
+>     real scalar    M, it, lo, hi, mid, F, q, mode, ud, uf, us, sg, tt
+>     real colvector x1, p, z0, z1
+>     real rowvector ug, pd, pf
+>     real matrix    Gt
+>     M  = 4000
+>     x1 = 1 :+ 8 :* ((1::M) :- 0.5) :/ M
+>     p  = invlogit(-1 :+ 0.1 :* x1)
+>     z0 = J(M, 1, 0)
+>     z1 = J(M, 1, 1)
+>     mode = (mean(p) > 0.5)
+>     lo = -20
+>     hi = 60
+>     for (it = 1; it <= 70; it++) {
+>         mid = (lo + hi) / 2
+>         F   = mean((1 :- p) :* _sq(mid, x1, z0, s1, s2) + p :* _sq(mid, x1, z
+> 1, s1, s2))
+>         if (F < tau) lo = mid
+>         else         hi = mid
+>     }
+>     q  = (lo + hi) / 2
+>     ud = _sq(q, 5, mode, s1, s2)
+>     uf = _sq(q, 5, 1, s1, s2)
+>     ug = (1..19) :* 0.05
+>     Gt = ((0.4 :+ s1 :* ug)', (0.5 :+ s2 :* ug)', invnormal(ug)')
+>     us = .
+>     sg = .
+>     tt = .
+>     pd = _E_seg(Gt, ug, q, (5, mode, 1), us, sg, tt)
+>     pf = _E_seg(Gt, ug, q, (5, 1, 1), us, sg, tt)
+>     return((pd[1], pd[2], pf[1], pf[2], q, ud, uf, 0.4 + s1*ud, 0.5 + s2*ud, 
+> 0.4 + s1*uf, 0.5 + s2*uf))
+> }
+
+: 
+: // report: E0 the point row, TT the draws, names of the coefficients, nref
+: // blocks, plim (empty if unknown), labels of the references
+: void _report(real rowvector E0, real matrix TT, string rowvector names,
+>              real scalar nref, real rowvector plim, string rowvector rlab)
+> {
+>     real scalar    k, r, j, B, base, ie, sd, rob, cr
+>     real colvector e, srt
+>     k = cols(names)
+>     B = rows(TT)
+>     for (r = 1; r <= nref; r++) {
+>         base = (r - 1) * (3*k + 2)
+>         printf("\n  reference: %s -- u* %6.4f (segment %g), draws whose segme
+> nt changed: %4.1f%%\n",
+>                rlab[r], E0[base + 3*k + 1], E0[base + 3*k + 2], 100 * mean(TT
+> [., base + 3*k + 2] :!= E0[base + 3*k + 2]))
+>         if (cols(plim)) printf("  coefficient     point     plim      t   SE_
+> anal   SD_boot  robust SD  anal/SD  anal/rob  slope t\n")
+>         else            printf("  coefficient     point   SE_anal   SD_boot  
+> robust SD  anal/SD  anal/rob  slope t\n")
+>         for (j = 1; j <= k; j++) {
+>             ie  = base + j
+>             e   = TT[., ie]
+>             sd  = sqrt(variance(e))
+>             srt = sort(e, 1)
+>             rob = (srt[ceil(0.75*B)] - srt[ceil(0.25*B)]) / 1.349
+>             if (cols(plim)) {
+>                 printf("  %-12s %8.4f %8.4f %6.2f  %8.4f  %8.4f  %8.4f   %6.3
+> f   %6.3f   %6.2f\n",
+>                        names[j], E0[ie], plim[(r-1)*k + j], (E0[ie] - plim[(r
+> -1)*k + j]) / E0[ie + k],
+>                        E0[ie + k], sd, rob, E0[ie + k] / sd, E0[ie + k] / rob
+> , E0[ie + 2*k])
+>             }
+>             else {
+>                 printf("  %-12s %8.4f  %8.4f  %8.4f  %8.4f   %6.3f   %6.3f   
+> %6.2f\n",
+>                        names[j], E0[ie], E0[ie + k], sd, rob, E0[ie + k] / sd
+> , E0[ie + k] / rob, E0[ie + 2*k])
+>             }
+>         }
+>     }
+> }
+note: variable cr unused.
+
+: end
+-------------------------------------------------------------------------------
+
+. 
+. * every step of E on the data in memory -> matrix _Eres; se: 1 = with the
+. * analytic SE, 0 = the value only (the draws)
+. capture program drop _E_full
+
+. program define _E_full
+  1.     args se
+  2.     quietly {
+  3.         local k : word count $XV
+  4.         local ng : word count $UG
+  5.         matrix _Gr = J(`ng', `k' + 1, .)
+  6.         matrix _KB = J(`ng', 1, .)
+  7.         local g 0
+  8.         foreach u of global UG {
+  9.             local ++g
+ 10.             if `se' {
+ 11.                 capture qreg $Y $XV, quantile(`u') vce(robust, kernel)
+ 12.                 if _rc qreg $Y $XV, quantile(`u') vce(robust, kernel) iter
+> ate(5000)
+ 13.             }
+ 14.             else {
+ 15.                 capture _qreg $Y $XV, quant(`u')
+ 16.                 if _rc _qreg $Y $XV, quant(`u') iterate(5000)
+ 17.             }
+ 18.             local j 0
+ 19.             local xb 0
+ 20.             foreach v of global XV {
+ 21.                 local ++j
+ 22.                 matrix _Gr[`g', `j'] = _b[`v']
+ 23.             }
+ 24.             matrix _Gr[`g', `k' + 1] = _b[_cons]
+ 25.             if `se' {
+ 26.                 local kb = e(kbwidth)
+ 27.                 matrix _KB[`g', 1] = `kb'
+ 28.                 capture drop _r`g' _k`g'
+ 29.                 predict double _r`g', residuals
+ 30.                 * qreg's Epanechnikov kernel (_qreg_kernel, private to qre
+> g.ado)
+.                 generate double _k`g' = 0.75*(1 - 0.2*(_r`g'/`kb')^2)/sqrt(5)
+>  * (abs(_r`g'/`kb') < sqrt(5))
+ 31.             }
+ 32.         }
+ 33.         local qkb 0
+ 34.         if `se' {
+ 35.             capture qreg $Y, quantile($TAU) vce(robust, kernel)
+ 36.             if _rc qreg $Y, quantile($TAU) vce(robust, kernel) iterate(500
+> 0)
+ 37.             local qh  = _b[_cons]
+ 38.             local qkb = e(kbwidth)
+ 39.             capture drop _rq _kq
+ 40.             generate double _rq = $Y - `qh'
+ 41.             generate double _kq = 0.75*(1 - 0.2*(_rq/`qkb')^2)/sqrt(5) * (
+> abs(_rq/`qkb') < sqrt(5))
+ 42.         }
+ 43.         else {
+ 44.             capture _qreg $Y, quant($TAU)
+ 45.             if _rc _qreg $Y, quant($TAU) iterate(5000)
+ 46.             local qh = _b[_cons]
+ 47.         }
+ 48.         * the default reference type, from this sample
+.         mata: _ref_$REFTYPE()
+ 49.         mata: _E_run(`qh', `qkb', `se')
+ 50.         if `se' drop _r* _k*
+ 51.     }
+ 52. end
+
+. 
+. capture program drop _dgp
+
+. program define _dgp
+  1.     args nobs s1 s2
+  2.     quietly {
+  3.         set obs `nobs'
+  4.         generate double x1 = 1 + 8*runiform()
+  5.         generate double x2 = runiform() < invlogit(-1 + 0.1*x1)
+  6.         generate double u  = runiform()
+  7.         generate double y  = invnormal(u) + (0.4 + `s1'*u)*x1 + (0.5 + `s2
+> '*u)*x2
+  8.         drop u
+  9.     }
+ 10. end
+
+. 
+. capture program drop _bkf_data
+
+. program define _bkf_data
+  1.     use bkf98I, clear
+  2.     quietly {
+  3.         generate double lexp = ln(exppc)
+  4.         generate byte male  = (sex == 1)
+  5.         generate byte urban = (zone == 2)
+  6.         forvalues l = 2/7 {
+  7.             generate byte g`l' = (gse == `l')
+  8.         }
+  9.         keep lexp size male urban gse g2-g7
+ 10.         keep if !missing(lexp, size, male, urban, gse)
+ 11.     }
+ 12. end
+
+. 
+. * ---- the perfect case -----------------------------------------------------
+> -------------
+. if "`what'" == "dgp" {
+.     global Y y
+.     global XV x1 x2
+.     global XFIX 5 1
+.     global REFTYPE dgp
+.     mata: TR = _truth(`tau', 2, 3)
+.     mata: printf("\ntruth: q_tau %8.4f; default type (5, 0): u* %6.4f, beta(u
+> *) (%7.4f, %7.4f), plim E (%7.4f, %7.4f)\n", TR[5], TR[6], TR[8], TR[9], TR[1
+> ], TR[2])
+.     mata: printf("       fixed type (5, 1): u* %6.4f, beta(u*) (%7.4f, %7.4f)
+> , plim E (%7.4f, %7.4f)\n", TR[7], TR[10], TR[11], TR[3], TR[4])
+.     set seed 1
+.     _dgp 2000 2 3
+.     _E_full 1
+.     matrix E0 = _Eres
+.     keep y x1 x2
+.     matrix TT = J(`B', colsof(E0), .)
+.     set seed 777
+.     timer clear 1
+.     timer on 1
+.     forvalues b = 1/`B' {
+  2.         preserve
+  3.         bsample
+  4.         _E_full 0
+  5.         restore
+  6.         matrix TT[`b', 1] = _Eres
+  7.     }
+.     timer off 1
+.     quietly timer list 1
+.     di as text "bootstrap time: " as result %6.1f r(t1) as text " s"
+.     di as text _n "==== perfect case: beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5
+>  + 3u, n = 2000, tau = `tau', B = `B'"
+.     mata: _report(st_matrix("E0"), st_matrix("TT"), ("x1", "x2"), 2, TR[1..4]
+> , ("default type (x1 mean, x2 mode)", "fixed type (5, 1)"))
+.     preserve
+.     clear
+.     quietly svmat double TT, names(c)
+.     save "`OUT'/p13_dgp_draws.dta", replace
+.     restore
+.     exit
+. }
+
+. 
+. * ---- Burkina: one chunk of the draws --------------------------------------
+> -------------
+. if "`what'" == "bkf" {
+.     global Y lexp
+.     global XV size male urban g2 g3 g4 g5 g6 g7
+.     global XFIX
+.     global REFTYPE bkf
+.     _bkf_data
+.     if `chunk' == 1 {
+.         timer clear 2
+.         timer on 2
+.         _E_full 1
+.         timer off 2
+.         quietly timer list 2
+.         di as text "point with its SE: " as result %6.1f r(t2) as text " s; m
+> ost frequent gse level " as result _gmode
+point with its SE:    3.4 s; most frequent gse level 6
+.         matrix E0 = _Eres
+.         preserve
+.         clear
+.         quietly svmat double E0, names(c)
+.         save "`OUT'/p13_bkf_point.dta", replace
+(file results/p13_bkf_point.dta not found)
+file results/p13_bkf_point.dta saved
+.         restore
+.     }
+.     local b1 = floor((`chunk' - 1) * `B' / `nch') + 1
+.     local b2 = floor(`chunk' * `B' / `nch')
+.     local nb = `b2' - `b1' + 1
+.     matrix TT = J(`nb', 29, .)
+.     set seed `= 777 + `chunk''
+.     timer clear 1
+.     timer on 1
+.     forvalues b = 1/`nb' {
+  2.         preserve
+  3.         bsample
+  4.         _E_full 0
+  5.         restore
+  6.         matrix TT[`b', 1] = _Eres
+  7.         if mod(`b', 20) == 0 di as text "  chunk `chunk': `b' of `nb'"
+  8.     }
+  chunk 1: 20 of 66
+  chunk 1: 40 of 66
+  chunk 1: 60 of 66
+.     timer off 1
+.     quietly timer list 1
+.     di as text "chunk `chunk' (`nb' draws): " as result %6.1f r(t1) as text "
+>  s"
+chunk 1 (66 draws):   94.0 s
+.     clear
+.     quietly svmat double TT, names(c)
+.     save "`OUT'/p13_bkf_draws_c`chunk'.dta", replace
+(file results/p13_bkf_draws_c1.dta not found)
+file results/p13_bkf_draws_c1.dta saved
+.     exit
+
+end of do-file
+
+. * p13a_E_draws.do -- called by p13_profile_delta.do (Paper, version 5,
+. * Section 7.5): the estimator E of the effect for a given household under
+. * het(qr), its delta-method standard error with the Powell kernel density
+. * (as qreg vce(robust, kernel)) on the sample, and B = 200 bootstrap draws in
+. * which the whole estimator is re-run (the 19 quantile regressions, q_tau,
+. * the reference type, u*, E), with no standard error in the draws.
+. * Argument: what [chunk]
+. *   dgp         the perfect case, beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5 + 3
+> u,
+. *               n = 2000, tau = 0.25: point, the 200 draws and the report;
+. *   bkf c       Burkina (bkf98I.dta), lexp on size male urban i.gse,
+. *               unweighted, tau = 0.25: chunk c of 3 of the 200 draws (seed
+. *               777 + c); chunk 1 also computes the point;
+. *   bkfreport   combines the Burkina chunks and reports.
+. * Reference household: the default real type (continuous regressors at their
+. * mean, binary ones at their most frequent value, a factor at its most
+. * frequent level), recomputed in every draw; in the DGP also the type (5, 1).
+. * It does not call gepwreg: the estimator is programmed here, with official
+. * quantile regressions.  The draws are saved in results/ for p13b.
+. version 16
+
+. clear all
+
+. args what chunk
+
+. set more off
+
+. set varabbrev off
+
+. local OUT "results"
+
+. capture mkdir "results"
+
+. local tau 0.25
+
+. local B   200
+
+. local nch 3
+
+. global TAU `tau'
+
+. numlist "0.05(0.05)0.95"
+
+. global UG `r(numlist)'
+
+. 
+. mata:
+------------------------------------------------- mata (type end to exit) -----
+: real matrix _qr_psi(real matrix Xt, real colvector r, real colvector kv,
+>                     real scalar kb, real scalar u)
+> {
+>     real matrix    H
+>     real colvector s
+>     H = invsym(quadcross(Xt, kv, Xt) / kb)
+>     s = (u :- (r :< 0)) :* (abs(r) :>= 1e-10)
+>     return((Xt :* s) * H)
+> }
+
+: 
+: real rowvector _E_seg(real matrix G, real rowvector ug, real scalar q,
+>                       real rowvector xt, real scalar ustar, real scalar seg,
+>                       real scalar tt)
+> {
+>     real scalar    ng
+>     real rowvector Qr
+>     ng = cols(ug)
+>     Qr = xt * G'
+>     if (q <= Qr[1]) {
+>         seg = 1
+>         tt  = 0
+>     }
+>     else if (q >= Qr[ng]) {
+>         seg = ng - 1
+>         tt  = 1
+>     }
+>     else {
+>         seg = max(selectindex(Qr :<= q))
+>         tt  = (q - Qr[seg]) / (Qr[seg+1] - Qr[seg])
+>     }
+>     ustar = ug[seg] + tt * (ug[seg+1] - ug[seg])
+>     return((1 - tt) * G[seg, .] + tt * G[seg+1, .])
+> }
+
+: 
+: // block of one reference: E (k), SE (k), slope t (k), u*, segment
+: real rowvector _E_pt(real matrix G, real rowvector ug, real scalar q,
+>                      real rowvector xr)
+> {
+>     real scalar    k, ustar, seg, tt
+>     real rowvector bs
+>     k     = cols(xr)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, (xr, 1), ustar, seg, tt)
+>     return((bs[1..k], J(1, 2*k, .), ustar, seg))
+> }
+
+: 
+: real rowvector _E_ref(real matrix G, real rowvector ug, real scalar q,
+>                       real colvector PSIQ, real matrix X, real rowvector xr,
+>                       real rowvector flag, real colvector KB)
+> {
+>     real scalar    n, k, ustar, seg, tt, D, j, clip
+>     real rowvector xt, bs, xbar, out, Qr
+>     real matrix    Xt, P1, P2, Pstar
+>     real colvector core, psi, dd
+>     n  = rows(X)
+>     k  = cols(X)
+>     Xt = (X, J(n, 1, 1))
+>     xt = (xr, 1)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, xt, ustar, seg, tt)
+>     Qr = xt * G'
+>     clip = (q <= Qr[1] | q >= Qr[cols(Qr)])
+>     D  = xt * (G[seg+1, .] - G[seg, .])'
+>     P1 = _qr_psi(Xt, st_data(., "_r" + strofreal(seg)),     st_data(., "_k" +
+>  strofreal(seg)),     KB[seg],     ug[seg])
+>     P2 = _qr_psi(Xt, st_data(., "_r" + strofreal(seg + 1)), st_data(., "_k" +
+>  strofreal(seg + 1)), KB[seg + 1], ug[seg + 1])
+>     Pstar = (1 - tt) * P1 + tt * P2
+>     core  = PSIQ - Pstar * xt'
+>     xbar  = mean(X)
+>     for (j = 1; j <= k; j++) {
+>         if (flag[j]) core = core - ((X[., j] :- xbar[j]) / n) * bs[j]
+>     }
+>     if (clip) core = J(n, 1, 0)
+>     out = J(1, 3*k + 2, .)
+>     for (j = 1; j <= k; j++) {
+>         psi = Pstar[., j] + ((G[seg+1, j] - G[seg, j]) / D) * core
+>         psi = psi :- mean(psi)
+>         out[j]     = bs[j]
+>         out[k + j] = sqrt(quadcross(psi, psi))
+>         dd  = P2[., j] - P1[., j]
+>         dd  = dd :- mean(dd)
+>         out[2*k + j] = (G[seg+1, j] - G[seg, j]) / sqrt(quadcross(dd, dd))
+>     }
+>     out[3*k + 1] = ustar
+>     out[3*k + 2] = seg
+>     return(out)
+> }
+
+: 
+: // _Eres = block of the default reference [, block of the fixed reference]
+: void _E_run(real scalar qh, real scalar qkb, real scalar se)
+> {
+>     real matrix    X, G
+>     real rowvector ug, xr, fl, xf, out
+>     real colvector KB, PSIQ
+>     real scalar    n, tau
+>     G   = st_matrix("_Gr")
+>     ug  = strtoreal(tokens(st_global("UG")))
+>     tau = strtoreal(st_global("TAU"))
+>     xr  = st_matrix("_XR")
+>     fl  = st_matrix("_FL")
+>     xf  = strtoreal(tokens(st_global("XFIX")))
+>     if (se) {
+>         X    = st_data(., tokens(st_global("XV")))
+>         n    = rows(X)
+>         KB   = st_matrix("_KB")
+>         PSIQ = _qr_psi(J(n, 1, 1), st_data(., "_rq"), st_data(., "_kq"), qkb,
+>  tau)
+>         out  = _E_ref(G, ug, qh, PSIQ, X, xr, fl, KB)
+>         if (cols(xf)) out = (out, _E_ref(G, ug, qh, PSIQ, X, xf, J(1, cols(xf
+> ), 0), KB))
+>     }
+>     else {
+>         out = _E_pt(G, ug, qh, xr)
+>         if (cols(xf)) out = (out, _E_pt(G, ug, qh, xf))
+>     }
+>     st_matrix("_Eres", out)
+> }
+
+: 
+: // the default reference type of the DGP: x1 at its mean, x2 at its mode
+: void _ref_dgp()
+> {
+>     real colvector x1, x2
+>     x1 = st_data(., "x1")
+>     x2 = st_data(., "x2")
+>     st_matrix("_XR", (mean(x1), mean(x2) > 0.5))
+>     st_matrix("_FL", (1, 0))
+> }
+
+: 
+: // Burkina: size at its mean, male and urban at their mode, gse at its most
+: // frequent level (dummies g2..g7)
+: void _ref_bkf()
+> {
+>     real colvector s, m, u, g
+>     real rowvector cnt, xr, top
+>     real scalar    l, gm
+>     s = st_data(., "size")
+>     m = st_data(., "male")
+>     u = st_data(., "urban")
+>     g = st_data(., "gse")
+>     cnt = J(1, 7, 0)
+>     for (l = 1; l <= 7; l++) cnt[l] = sum(g :== l)
+>     top = selectindex(cnt :== max(cnt))
+>     gm  = top[1]
+>     xr = (mean(s), mean(m) > 0.5, mean(u) > 0.5)
+>     for (l = 2; l <= 7; l++) xr = (xr, gm == l)
+>     st_matrix("_XR", xr)
+>     st_matrix("_FL", (1, J(1, 8, 0)))
+>     st_numscalar("_gmode", gm)
+> }
+
+: 
+: real colvector _sq(real scalar q, real colvector x1, real colvector x2,
+>                    real scalar s1, real scalar s2)
+> {
+>     real colvector lo, hi, mid, up
+>     real scalar    it
+>     lo = J(rows(x1), 1, 1e-12)
+>     hi = J(rows(x1), 1, 1 - 1e-12)
+>     for (it = 1; it <= 70; it++) {
+>         mid = (lo + hi) :/ 2
+>         up  = (invnormal(mid) + (0.4 :+ s1 :* mid) :* x1 + (0.5 :+ s2 :* mid)
+>  :* x2) :< q
+>         lo  = up :* mid + (1 :- up) :* lo
+>         hi  = up :* hi + (1 :- up) :* mid
+>     }
+>     return((lo + hi) :/ 2)
+> }
+
+: 
+: // truth of the DGP, deterministic: plim E for the default type (5, mode)
+: // then the fixed type (5, 1); also q_tau, u* and beta(u*)
+: real rowvector _truth(real scalar tau, real scalar s1, real scalar s2)
+> {
+>     real scalar    M, it, lo, hi, mid, F, q, mode, ud, uf, us, sg, tt
+>     real colvector x1, p, z0, z1
+>     real rowvector ug, pd, pf
+>     real matrix    Gt
+>     M  = 4000
+>     x1 = 1 :+ 8 :* ((1::M) :- 0.5) :/ M
+>     p  = invlogit(-1 :+ 0.1 :* x1)
+>     z0 = J(M, 1, 0)
+>     z1 = J(M, 1, 1)
+>     mode = (mean(p) > 0.5)
+>     lo = -20
+>     hi = 60
+>     for (it = 1; it <= 70; it++) {
+>         mid = (lo + hi) / 2
+>         F   = mean((1 :- p) :* _sq(mid, x1, z0, s1, s2) + p :* _sq(mid, x1, z
+> 1, s1, s2))
+>         if (F < tau) lo = mid
+>         else         hi = mid
+>     }
+>     q  = (lo + hi) / 2
+>     ud = _sq(q, 5, mode, s1, s2)
+>     uf = _sq(q, 5, 1, s1, s2)
+>     ug = (1..19) :* 0.05
+>     Gt = ((0.4 :+ s1 :* ug)', (0.5 :+ s2 :* ug)', invnormal(ug)')
+>     us = .
+>     sg = .
+>     tt = .
+>     pd = _E_seg(Gt, ug, q, (5, mode, 1), us, sg, tt)
+>     pf = _E_seg(Gt, ug, q, (5, 1, 1), us, sg, tt)
+>     return((pd[1], pd[2], pf[1], pf[2], q, ud, uf, 0.4 + s1*ud, 0.5 + s2*ud, 
+> 0.4 + s1*uf, 0.5 + s2*uf))
+> }
+
+: 
+: // report: E0 the point row, TT the draws, names of the coefficients, nref
+: // blocks, plim (empty if unknown), labels of the references
+: void _report(real rowvector E0, real matrix TT, string rowvector names,
+>              real scalar nref, real rowvector plim, string rowvector rlab)
+> {
+>     real scalar    k, r, j, B, base, ie, sd, rob, cr
+>     real colvector e, srt
+>     k = cols(names)
+>     B = rows(TT)
+>     for (r = 1; r <= nref; r++) {
+>         base = (r - 1) * (3*k + 2)
+>         printf("\n  reference: %s -- u* %6.4f (segment %g), draws whose segme
+> nt changed: %4.1f%%\n",
+>                rlab[r], E0[base + 3*k + 1], E0[base + 3*k + 2], 100 * mean(TT
+> [., base + 3*k + 2] :!= E0[base + 3*k + 2]))
+>         if (cols(plim)) printf("  coefficient     point     plim      t   SE_
+> anal   SD_boot  robust SD  anal/SD  anal/rob  slope t\n")
+>         else            printf("  coefficient     point   SE_anal   SD_boot  
+> robust SD  anal/SD  anal/rob  slope t\n")
+>         for (j = 1; j <= k; j++) {
+>             ie  = base + j
+>             e   = TT[., ie]
+>             sd  = sqrt(variance(e))
+>             srt = sort(e, 1)
+>             rob = (srt[ceil(0.75*B)] - srt[ceil(0.25*B)]) / 1.349
+>             if (cols(plim)) {
+>                 printf("  %-12s %8.4f %8.4f %6.2f  %8.4f  %8.4f  %8.4f   %6.3
+> f   %6.3f   %6.2f\n",
+>                        names[j], E0[ie], plim[(r-1)*k + j], (E0[ie] - plim[(r
+> -1)*k + j]) / E0[ie + k],
+>                        E0[ie + k], sd, rob, E0[ie + k] / sd, E0[ie + k] / rob
+> , E0[ie + 2*k])
+>             }
+>             else {
+>                 printf("  %-12s %8.4f  %8.4f  %8.4f  %8.4f   %6.3f   %6.3f   
+> %6.2f\n",
+>                        names[j], E0[ie], E0[ie + k], sd, rob, E0[ie + k] / sd
+> , E0[ie + k] / rob, E0[ie + 2*k])
+>             }
+>         }
+>     }
+> }
+note: variable cr unused.
+
+: end
+-------------------------------------------------------------------------------
+
+. 
+. * every step of E on the data in memory -> matrix _Eres; se: 1 = with the
+. * analytic SE, 0 = the value only (the draws)
+. capture program drop _E_full
+
+. program define _E_full
+  1.     args se
+  2.     quietly {
+  3.         local k : word count $XV
+  4.         local ng : word count $UG
+  5.         matrix _Gr = J(`ng', `k' + 1, .)
+  6.         matrix _KB = J(`ng', 1, .)
+  7.         local g 0
+  8.         foreach u of global UG {
+  9.             local ++g
+ 10.             if `se' {
+ 11.                 capture qreg $Y $XV, quantile(`u') vce(robust, kernel)
+ 12.                 if _rc qreg $Y $XV, quantile(`u') vce(robust, kernel) iter
+> ate(5000)
+ 13.             }
+ 14.             else {
+ 15.                 capture _qreg $Y $XV, quant(`u')
+ 16.                 if _rc _qreg $Y $XV, quant(`u') iterate(5000)
+ 17.             }
+ 18.             local j 0
+ 19.             local xb 0
+ 20.             foreach v of global XV {
+ 21.                 local ++j
+ 22.                 matrix _Gr[`g', `j'] = _b[`v']
+ 23.             }
+ 24.             matrix _Gr[`g', `k' + 1] = _b[_cons]
+ 25.             if `se' {
+ 26.                 local kb = e(kbwidth)
+ 27.                 matrix _KB[`g', 1] = `kb'
+ 28.                 capture drop _r`g' _k`g'
+ 29.                 predict double _r`g', residuals
+ 30.                 * qreg's Epanechnikov kernel (_qreg_kernel, private to qre
+> g.ado)
+.                 generate double _k`g' = 0.75*(1 - 0.2*(_r`g'/`kb')^2)/sqrt(5)
+>  * (abs(_r`g'/`kb') < sqrt(5))
+ 31.             }
+ 32.         }
+ 33.         local qkb 0
+ 34.         if `se' {
+ 35.             capture qreg $Y, quantile($TAU) vce(robust, kernel)
+ 36.             if _rc qreg $Y, quantile($TAU) vce(robust, kernel) iterate(500
+> 0)
+ 37.             local qh  = _b[_cons]
+ 38.             local qkb = e(kbwidth)
+ 39.             capture drop _rq _kq
+ 40.             generate double _rq = $Y - `qh'
+ 41.             generate double _kq = 0.75*(1 - 0.2*(_rq/`qkb')^2)/sqrt(5) * (
+> abs(_rq/`qkb') < sqrt(5))
+ 42.         }
+ 43.         else {
+ 44.             capture _qreg $Y, quant($TAU)
+ 45.             if _rc _qreg $Y, quant($TAU) iterate(5000)
+ 46.             local qh = _b[_cons]
+ 47.         }
+ 48.         * the default reference type, from this sample
+.         mata: _ref_$REFTYPE()
+ 49.         mata: _E_run(`qh', `qkb', `se')
+ 50.         if `se' drop _r* _k*
+ 51.     }
+ 52. end
+
+. 
+. capture program drop _dgp
+
+. program define _dgp
+  1.     args nobs s1 s2
+  2.     quietly {
+  3.         set obs `nobs'
+  4.         generate double x1 = 1 + 8*runiform()
+  5.         generate double x2 = runiform() < invlogit(-1 + 0.1*x1)
+  6.         generate double u  = runiform()
+  7.         generate double y  = invnormal(u) + (0.4 + `s1'*u)*x1 + (0.5 + `s2
+> '*u)*x2
+  8.         drop u
+  9.     }
+ 10. end
+
+. 
+. capture program drop _bkf_data
+
+. program define _bkf_data
+  1.     use bkf98I, clear
+  2.     quietly {
+  3.         generate double lexp = ln(exppc)
+  4.         generate byte male  = (sex == 1)
+  5.         generate byte urban = (zone == 2)
+  6.         forvalues l = 2/7 {
+  7.             generate byte g`l' = (gse == `l')
+  8.         }
+  9.         keep lexp size male urban gse g2-g7
+ 10.         keep if !missing(lexp, size, male, urban, gse)
+ 11.     }
+ 12. end
+
+. 
+. * ---- the perfect case -----------------------------------------------------
+> -------------
+. if "`what'" == "dgp" {
+.     global Y y
+.     global XV x1 x2
+.     global XFIX 5 1
+.     global REFTYPE dgp
+.     mata: TR = _truth(`tau', 2, 3)
+.     mata: printf("\ntruth: q_tau %8.4f; default type (5, 0): u* %6.4f, beta(u
+> *) (%7.4f, %7.4f), plim E (%7.4f, %7.4f)\n", TR[5], TR[6], TR[8], TR[9], TR[1
+> ], TR[2])
+.     mata: printf("       fixed type (5, 1): u* %6.4f, beta(u*) (%7.4f, %7.4f)
+> , plim E (%7.4f, %7.4f)\n", TR[7], TR[10], TR[11], TR[3], TR[4])
+.     set seed 1
+.     _dgp 2000 2 3
+.     _E_full 1
+.     matrix E0 = _Eres
+.     keep y x1 x2
+.     matrix TT = J(`B', colsof(E0), .)
+.     set seed 777
+.     timer clear 1
+.     timer on 1
+.     forvalues b = 1/`B' {
+  2.         preserve
+  3.         bsample
+  4.         _E_full 0
+  5.         restore
+  6.         matrix TT[`b', 1] = _Eres
+  7.     }
+.     timer off 1
+.     quietly timer list 1
+.     di as text "bootstrap time: " as result %6.1f r(t1) as text " s"
+.     di as text _n "==== perfect case: beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5
+>  + 3u, n = 2000, tau = `tau', B = `B'"
+.     mata: _report(st_matrix("E0"), st_matrix("TT"), ("x1", "x2"), 2, TR[1..4]
+> , ("default type (x1 mean, x2 mode)", "fixed type (5, 1)"))
+.     preserve
+.     clear
+.     quietly svmat double TT, names(c)
+.     save "`OUT'/p13_dgp_draws.dta", replace
+.     restore
+.     exit
+. }
+
+. 
+. * ---- Burkina: one chunk of the draws --------------------------------------
+> -------------
+. if "`what'" == "bkf" {
+.     global Y lexp
+.     global XV size male urban g2 g3 g4 g5 g6 g7
+.     global XFIX
+.     global REFTYPE bkf
+.     _bkf_data
+.     if `chunk' == 1 {
+.         timer clear 2
+.         timer on 2
+.         _E_full 1
+.         timer off 2
+.         quietly timer list 2
+.         di as text "point with its SE: " as result %6.1f r(t2) as text " s; m
+> ost frequent gse level " as result _gmode
+.         matrix E0 = _Eres
+.         preserve
+.         clear
+.         quietly svmat double E0, names(c)
+.         save "`OUT'/p13_bkf_point.dta", replace
+.         restore
+.     }
+.     local b1 = floor((`chunk' - 1) * `B' / `nch') + 1
+.     local b2 = floor(`chunk' * `B' / `nch')
+.     local nb = `b2' - `b1' + 1
+.     matrix TT = J(`nb', 29, .)
+.     set seed `= 777 + `chunk''
+.     timer clear 1
+.     timer on 1
+.     forvalues b = 1/`nb' {
+  2.         preserve
+  3.         bsample
+  4.         _E_full 0
+  5.         restore
+  6.         matrix TT[`b', 1] = _Eres
+  7.         if mod(`b', 20) == 0 di as text "  chunk `chunk': `b' of `nb'"
+  8.     }
+  chunk 2: 20 of 67
+  chunk 2: 40 of 67
+  chunk 2: 60 of 67
+.     timer off 1
+.     quietly timer list 1
+.     di as text "chunk `chunk' (`nb' draws): " as result %6.1f r(t1) as text "
+>  s"
+chunk 2 (67 draws):   89.9 s
+.     clear
+.     quietly svmat double TT, names(c)
+.     save "`OUT'/p13_bkf_draws_c`chunk'.dta", replace
+(file results/p13_bkf_draws_c2.dta not found)
+file results/p13_bkf_draws_c2.dta saved
+.     exit
+
+end of do-file
+
+. * p13a_E_draws.do -- called by p13_profile_delta.do (Paper, version 5,
+. * Section 7.5): the estimator E of the effect for a given household under
+. * het(qr), its delta-method standard error with the Powell kernel density
+. * (as qreg vce(robust, kernel)) on the sample, and B = 200 bootstrap draws in
+. * which the whole estimator is re-run (the 19 quantile regressions, q_tau,
+. * the reference type, u*, E), with no standard error in the draws.
+. * Argument: what [chunk]
+. *   dgp         the perfect case, beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5 + 3
+> u,
+. *               n = 2000, tau = 0.25: point, the 200 draws and the report;
+. *   bkf c       Burkina (bkf98I.dta), lexp on size male urban i.gse,
+. *               unweighted, tau = 0.25: chunk c of 3 of the 200 draws (seed
+. *               777 + c); chunk 1 also computes the point;
+. *   bkfreport   combines the Burkina chunks and reports.
+. * Reference household: the default real type (continuous regressors at their
+. * mean, binary ones at their most frequent value, a factor at its most
+. * frequent level), recomputed in every draw; in the DGP also the type (5, 1).
+. * It does not call gepwreg: the estimator is programmed here, with official
+. * quantile regressions.  The draws are saved in results/ for p13b.
+. version 16
+
+. clear all
+
+. args what chunk
+
+. set more off
+
+. set varabbrev off
+
+. local OUT "results"
+
+. capture mkdir "results"
+
+. local tau 0.25
+
+. local B   200
+
+. local nch 3
+
+. global TAU `tau'
+
+. numlist "0.05(0.05)0.95"
+
+. global UG `r(numlist)'
+
+. 
+. mata:
+------------------------------------------------- mata (type end to exit) -----
+: real matrix _qr_psi(real matrix Xt, real colvector r, real colvector kv,
+>                     real scalar kb, real scalar u)
+> {
+>     real matrix    H
+>     real colvector s
+>     H = invsym(quadcross(Xt, kv, Xt) / kb)
+>     s = (u :- (r :< 0)) :* (abs(r) :>= 1e-10)
+>     return((Xt :* s) * H)
+> }
+
+: 
+: real rowvector _E_seg(real matrix G, real rowvector ug, real scalar q,
+>                       real rowvector xt, real scalar ustar, real scalar seg,
+>                       real scalar tt)
+> {
+>     real scalar    ng
+>     real rowvector Qr
+>     ng = cols(ug)
+>     Qr = xt * G'
+>     if (q <= Qr[1]) {
+>         seg = 1
+>         tt  = 0
+>     }
+>     else if (q >= Qr[ng]) {
+>         seg = ng - 1
+>         tt  = 1
+>     }
+>     else {
+>         seg = max(selectindex(Qr :<= q))
+>         tt  = (q - Qr[seg]) / (Qr[seg+1] - Qr[seg])
+>     }
+>     ustar = ug[seg] + tt * (ug[seg+1] - ug[seg])
+>     return((1 - tt) * G[seg, .] + tt * G[seg+1, .])
+> }
+
+: 
+: // block of one reference: E (k), SE (k), slope t (k), u*, segment
+: real rowvector _E_pt(real matrix G, real rowvector ug, real scalar q,
+>                      real rowvector xr)
+> {
+>     real scalar    k, ustar, seg, tt
+>     real rowvector bs
+>     k     = cols(xr)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, (xr, 1), ustar, seg, tt)
+>     return((bs[1..k], J(1, 2*k, .), ustar, seg))
+> }
+
+: 
+: real rowvector _E_ref(real matrix G, real rowvector ug, real scalar q,
+>                       real colvector PSIQ, real matrix X, real rowvector xr,
+>                       real rowvector flag, real colvector KB)
+> {
+>     real scalar    n, k, ustar, seg, tt, D, j, clip
+>     real rowvector xt, bs, xbar, out, Qr
+>     real matrix    Xt, P1, P2, Pstar
+>     real colvector core, psi, dd
+>     n  = rows(X)
+>     k  = cols(X)
+>     Xt = (X, J(n, 1, 1))
+>     xt = (xr, 1)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, xt, ustar, seg, tt)
+>     Qr = xt * G'
+>     clip = (q <= Qr[1] | q >= Qr[cols(Qr)])
+>     D  = xt * (G[seg+1, .] - G[seg, .])'
+>     P1 = _qr_psi(Xt, st_data(., "_r" + strofreal(seg)),     st_data(., "_k" +
+>  strofreal(seg)),     KB[seg],     ug[seg])
+>     P2 = _qr_psi(Xt, st_data(., "_r" + strofreal(seg + 1)), st_data(., "_k" +
+>  strofreal(seg + 1)), KB[seg + 1], ug[seg + 1])
+>     Pstar = (1 - tt) * P1 + tt * P2
+>     core  = PSIQ - Pstar * xt'
+>     xbar  = mean(X)
+>     for (j = 1; j <= k; j++) {
+>         if (flag[j]) core = core - ((X[., j] :- xbar[j]) / n) * bs[j]
+>     }
+>     if (clip) core = J(n, 1, 0)
+>     out = J(1, 3*k + 2, .)
+>     for (j = 1; j <= k; j++) {
+>         psi = Pstar[., j] + ((G[seg+1, j] - G[seg, j]) / D) * core
+>         psi = psi :- mean(psi)
+>         out[j]     = bs[j]
+>         out[k + j] = sqrt(quadcross(psi, psi))
+>         dd  = P2[., j] - P1[., j]
+>         dd  = dd :- mean(dd)
+>         out[2*k + j] = (G[seg+1, j] - G[seg, j]) / sqrt(quadcross(dd, dd))
+>     }
+>     out[3*k + 1] = ustar
+>     out[3*k + 2] = seg
+>     return(out)
+> }
+
+: 
+: // _Eres = block of the default reference [, block of the fixed reference]
+: void _E_run(real scalar qh, real scalar qkb, real scalar se)
+> {
+>     real matrix    X, G
+>     real rowvector ug, xr, fl, xf, out
+>     real colvector KB, PSIQ
+>     real scalar    n, tau
+>     G   = st_matrix("_Gr")
+>     ug  = strtoreal(tokens(st_global("UG")))
+>     tau = strtoreal(st_global("TAU"))
+>     xr  = st_matrix("_XR")
+>     fl  = st_matrix("_FL")
+>     xf  = strtoreal(tokens(st_global("XFIX")))
+>     if (se) {
+>         X    = st_data(., tokens(st_global("XV")))
+>         n    = rows(X)
+>         KB   = st_matrix("_KB")
+>         PSIQ = _qr_psi(J(n, 1, 1), st_data(., "_rq"), st_data(., "_kq"), qkb,
+>  tau)
+>         out  = _E_ref(G, ug, qh, PSIQ, X, xr, fl, KB)
+>         if (cols(xf)) out = (out, _E_ref(G, ug, qh, PSIQ, X, xf, J(1, cols(xf
+> ), 0), KB))
+>     }
+>     else {
+>         out = _E_pt(G, ug, qh, xr)
+>         if (cols(xf)) out = (out, _E_pt(G, ug, qh, xf))
+>     }
+>     st_matrix("_Eres", out)
+> }
+
+: 
+: // the default reference type of the DGP: x1 at its mean, x2 at its mode
+: void _ref_dgp()
+> {
+>     real colvector x1, x2
+>     x1 = st_data(., "x1")
+>     x2 = st_data(., "x2")
+>     st_matrix("_XR", (mean(x1), mean(x2) > 0.5))
+>     st_matrix("_FL", (1, 0))
+> }
+
+: 
+: // Burkina: size at its mean, male and urban at their mode, gse at its most
+: // frequent level (dummies g2..g7)
+: void _ref_bkf()
+> {
+>     real colvector s, m, u, g
+>     real rowvector cnt, xr, top
+>     real scalar    l, gm
+>     s = st_data(., "size")
+>     m = st_data(., "male")
+>     u = st_data(., "urban")
+>     g = st_data(., "gse")
+>     cnt = J(1, 7, 0)
+>     for (l = 1; l <= 7; l++) cnt[l] = sum(g :== l)
+>     top = selectindex(cnt :== max(cnt))
+>     gm  = top[1]
+>     xr = (mean(s), mean(m) > 0.5, mean(u) > 0.5)
+>     for (l = 2; l <= 7; l++) xr = (xr, gm == l)
+>     st_matrix("_XR", xr)
+>     st_matrix("_FL", (1, J(1, 8, 0)))
+>     st_numscalar("_gmode", gm)
+> }
+
+: 
+: real colvector _sq(real scalar q, real colvector x1, real colvector x2,
+>                    real scalar s1, real scalar s2)
+> {
+>     real colvector lo, hi, mid, up
+>     real scalar    it
+>     lo = J(rows(x1), 1, 1e-12)
+>     hi = J(rows(x1), 1, 1 - 1e-12)
+>     for (it = 1; it <= 70; it++) {
+>         mid = (lo + hi) :/ 2
+>         up  = (invnormal(mid) + (0.4 :+ s1 :* mid) :* x1 + (0.5 :+ s2 :* mid)
+>  :* x2) :< q
+>         lo  = up :* mid + (1 :- up) :* lo
+>         hi  = up :* hi + (1 :- up) :* mid
+>     }
+>     return((lo + hi) :/ 2)
+> }
+
+: 
+: // truth of the DGP, deterministic: plim E for the default type (5, mode)
+: // then the fixed type (5, 1); also q_tau, u* and beta(u*)
+: real rowvector _truth(real scalar tau, real scalar s1, real scalar s2)
+> {
+>     real scalar    M, it, lo, hi, mid, F, q, mode, ud, uf, us, sg, tt
+>     real colvector x1, p, z0, z1
+>     real rowvector ug, pd, pf
+>     real matrix    Gt
+>     M  = 4000
+>     x1 = 1 :+ 8 :* ((1::M) :- 0.5) :/ M
+>     p  = invlogit(-1 :+ 0.1 :* x1)
+>     z0 = J(M, 1, 0)
+>     z1 = J(M, 1, 1)
+>     mode = (mean(p) > 0.5)
+>     lo = -20
+>     hi = 60
+>     for (it = 1; it <= 70; it++) {
+>         mid = (lo + hi) / 2
+>         F   = mean((1 :- p) :* _sq(mid, x1, z0, s1, s2) + p :* _sq(mid, x1, z
+> 1, s1, s2))
+>         if (F < tau) lo = mid
+>         else         hi = mid
+>     }
+>     q  = (lo + hi) / 2
+>     ud = _sq(q, 5, mode, s1, s2)
+>     uf = _sq(q, 5, 1, s1, s2)
+>     ug = (1..19) :* 0.05
+>     Gt = ((0.4 :+ s1 :* ug)', (0.5 :+ s2 :* ug)', invnormal(ug)')
+>     us = .
+>     sg = .
+>     tt = .
+>     pd = _E_seg(Gt, ug, q, (5, mode, 1), us, sg, tt)
+>     pf = _E_seg(Gt, ug, q, (5, 1, 1), us, sg, tt)
+>     return((pd[1], pd[2], pf[1], pf[2], q, ud, uf, 0.4 + s1*ud, 0.5 + s2*ud, 
+> 0.4 + s1*uf, 0.5 + s2*uf))
+> }
+
+: 
+: // report: E0 the point row, TT the draws, names of the coefficients, nref
+: // blocks, plim (empty if unknown), labels of the references
+: void _report(real rowvector E0, real matrix TT, string rowvector names,
+>              real scalar nref, real rowvector plim, string rowvector rlab)
+> {
+>     real scalar    k, r, j, B, base, ie, sd, rob, cr
+>     real colvector e, srt
+>     k = cols(names)
+>     B = rows(TT)
+>     for (r = 1; r <= nref; r++) {
+>         base = (r - 1) * (3*k + 2)
+>         printf("\n  reference: %s -- u* %6.4f (segment %g), draws whose segme
+> nt changed: %4.1f%%\n",
+>                rlab[r], E0[base + 3*k + 1], E0[base + 3*k + 2], 100 * mean(TT
+> [., base + 3*k + 2] :!= E0[base + 3*k + 2]))
+>         if (cols(plim)) printf("  coefficient     point     plim      t   SE_
+> anal   SD_boot  robust SD  anal/SD  anal/rob  slope t\n")
+>         else            printf("  coefficient     point   SE_anal   SD_boot  
+> robust SD  anal/SD  anal/rob  slope t\n")
+>         for (j = 1; j <= k; j++) {
+>             ie  = base + j
+>             e   = TT[., ie]
+>             sd  = sqrt(variance(e))
+>             srt = sort(e, 1)
+>             rob = (srt[ceil(0.75*B)] - srt[ceil(0.25*B)]) / 1.349
+>             if (cols(plim)) {
+>                 printf("  %-12s %8.4f %8.4f %6.2f  %8.4f  %8.4f  %8.4f   %6.3
+> f   %6.3f   %6.2f\n",
+>                        names[j], E0[ie], plim[(r-1)*k + j], (E0[ie] - plim[(r
+> -1)*k + j]) / E0[ie + k],
+>                        E0[ie + k], sd, rob, E0[ie + k] / sd, E0[ie + k] / rob
+> , E0[ie + 2*k])
+>             }
+>             else {
+>                 printf("  %-12s %8.4f  %8.4f  %8.4f  %8.4f   %6.3f   %6.3f   
+> %6.2f\n",
+>                        names[j], E0[ie], E0[ie + k], sd, rob, E0[ie + k] / sd
+> , E0[ie + k] / rob, E0[ie + 2*k])
+>             }
+>         }
+>     }
+> }
+note: variable cr unused.
+
+: end
+-------------------------------------------------------------------------------
+
+. 
+. * every step of E on the data in memory -> matrix _Eres; se: 1 = with the
+. * analytic SE, 0 = the value only (the draws)
+. capture program drop _E_full
+
+. program define _E_full
+  1.     args se
+  2.     quietly {
+  3.         local k : word count $XV
+  4.         local ng : word count $UG
+  5.         matrix _Gr = J(`ng', `k' + 1, .)
+  6.         matrix _KB = J(`ng', 1, .)
+  7.         local g 0
+  8.         foreach u of global UG {
+  9.             local ++g
+ 10.             if `se' {
+ 11.                 capture qreg $Y $XV, quantile(`u') vce(robust, kernel)
+ 12.                 if _rc qreg $Y $XV, quantile(`u') vce(robust, kernel) iter
+> ate(5000)
+ 13.             }
+ 14.             else {
+ 15.                 capture _qreg $Y $XV, quant(`u')
+ 16.                 if _rc _qreg $Y $XV, quant(`u') iterate(5000)
+ 17.             }
+ 18.             local j 0
+ 19.             local xb 0
+ 20.             foreach v of global XV {
+ 21.                 local ++j
+ 22.                 matrix _Gr[`g', `j'] = _b[`v']
+ 23.             }
+ 24.             matrix _Gr[`g', `k' + 1] = _b[_cons]
+ 25.             if `se' {
+ 26.                 local kb = e(kbwidth)
+ 27.                 matrix _KB[`g', 1] = `kb'
+ 28.                 capture drop _r`g' _k`g'
+ 29.                 predict double _r`g', residuals
+ 30.                 * qreg's Epanechnikov kernel (_qreg_kernel, private to qre
+> g.ado)
+.                 generate double _k`g' = 0.75*(1 - 0.2*(_r`g'/`kb')^2)/sqrt(5)
+>  * (abs(_r`g'/`kb') < sqrt(5))
+ 31.             }
+ 32.         }
+ 33.         local qkb 0
+ 34.         if `se' {
+ 35.             capture qreg $Y, quantile($TAU) vce(robust, kernel)
+ 36.             if _rc qreg $Y, quantile($TAU) vce(robust, kernel) iterate(500
+> 0)
+ 37.             local qh  = _b[_cons]
+ 38.             local qkb = e(kbwidth)
+ 39.             capture drop _rq _kq
+ 40.             generate double _rq = $Y - `qh'
+ 41.             generate double _kq = 0.75*(1 - 0.2*(_rq/`qkb')^2)/sqrt(5) * (
+> abs(_rq/`qkb') < sqrt(5))
+ 42.         }
+ 43.         else {
+ 44.             capture _qreg $Y, quant($TAU)
+ 45.             if _rc _qreg $Y, quant($TAU) iterate(5000)
+ 46.             local qh = _b[_cons]
+ 47.         }
+ 48.         * the default reference type, from this sample
+.         mata: _ref_$REFTYPE()
+ 49.         mata: _E_run(`qh', `qkb', `se')
+ 50.         if `se' drop _r* _k*
+ 51.     }
+ 52. end
+
+. 
+. capture program drop _dgp
+
+. program define _dgp
+  1.     args nobs s1 s2
+  2.     quietly {
+  3.         set obs `nobs'
+  4.         generate double x1 = 1 + 8*runiform()
+  5.         generate double x2 = runiform() < invlogit(-1 + 0.1*x1)
+  6.         generate double u  = runiform()
+  7.         generate double y  = invnormal(u) + (0.4 + `s1'*u)*x1 + (0.5 + `s2
+> '*u)*x2
+  8.         drop u
+  9.     }
+ 10. end
+
+. 
+. capture program drop _bkf_data
+
+. program define _bkf_data
+  1.     use bkf98I, clear
+  2.     quietly {
+  3.         generate double lexp = ln(exppc)
+  4.         generate byte male  = (sex == 1)
+  5.         generate byte urban = (zone == 2)
+  6.         forvalues l = 2/7 {
+  7.             generate byte g`l' = (gse == `l')
+  8.         }
+  9.         keep lexp size male urban gse g2-g7
+ 10.         keep if !missing(lexp, size, male, urban, gse)
+ 11.     }
+ 12. end
+
+. 
+. * ---- the perfect case -----------------------------------------------------
+> -------------
+. if "`what'" == "dgp" {
+.     global Y y
+.     global XV x1 x2
+.     global XFIX 5 1
+.     global REFTYPE dgp
+.     mata: TR = _truth(`tau', 2, 3)
+.     mata: printf("\ntruth: q_tau %8.4f; default type (5, 0): u* %6.4f, beta(u
+> *) (%7.4f, %7.4f), plim E (%7.4f, %7.4f)\n", TR[5], TR[6], TR[8], TR[9], TR[1
+> ], TR[2])
+.     mata: printf("       fixed type (5, 1): u* %6.4f, beta(u*) (%7.4f, %7.4f)
+> , plim E (%7.4f, %7.4f)\n", TR[7], TR[10], TR[11], TR[3], TR[4])
+.     set seed 1
+.     _dgp 2000 2 3
+.     _E_full 1
+.     matrix E0 = _Eres
+.     keep y x1 x2
+.     matrix TT = J(`B', colsof(E0), .)
+.     set seed 777
+.     timer clear 1
+.     timer on 1
+.     forvalues b = 1/`B' {
+  2.         preserve
+  3.         bsample
+  4.         _E_full 0
+  5.         restore
+  6.         matrix TT[`b', 1] = _Eres
+  7.     }
+.     timer off 1
+.     quietly timer list 1
+.     di as text "bootstrap time: " as result %6.1f r(t1) as text " s"
+.     di as text _n "==== perfect case: beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5
+>  + 3u, n = 2000, tau = `tau', B = `B'"
+.     mata: _report(st_matrix("E0"), st_matrix("TT"), ("x1", "x2"), 2, TR[1..4]
+> , ("default type (x1 mean, x2 mode)", "fixed type (5, 1)"))
+.     preserve
+.     clear
+.     quietly svmat double TT, names(c)
+.     save "`OUT'/p13_dgp_draws.dta", replace
+.     restore
+.     exit
+. }
+
+. 
+. * ---- Burkina: one chunk of the draws --------------------------------------
+> -------------
+. if "`what'" == "bkf" {
+.     global Y lexp
+.     global XV size male urban g2 g3 g4 g5 g6 g7
+.     global XFIX
+.     global REFTYPE bkf
+.     _bkf_data
+.     if `chunk' == 1 {
+.         timer clear 2
+.         timer on 2
+.         _E_full 1
+.         timer off 2
+.         quietly timer list 2
+.         di as text "point with its SE: " as result %6.1f r(t2) as text " s; m
+> ost frequent gse level " as result _gmode
+.         matrix E0 = _Eres
+.         preserve
+.         clear
+.         quietly svmat double E0, names(c)
+.         save "`OUT'/p13_bkf_point.dta", replace
+.         restore
+.     }
+.     local b1 = floor((`chunk' - 1) * `B' / `nch') + 1
+.     local b2 = floor(`chunk' * `B' / `nch')
+.     local nb = `b2' - `b1' + 1
+.     matrix TT = J(`nb', 29, .)
+.     set seed `= 777 + `chunk''
+.     timer clear 1
+.     timer on 1
+.     forvalues b = 1/`nb' {
+  2.         preserve
+  3.         bsample
+  4.         _E_full 0
+  5.         restore
+  6.         matrix TT[`b', 1] = _Eres
+  7.         if mod(`b', 20) == 0 di as text "  chunk `chunk': `b' of `nb'"
+  8.     }
+  chunk 3: 20 of 67
+  chunk 3: 40 of 67
+  chunk 3: 60 of 67
+.     timer off 1
+.     quietly timer list 1
+.     di as text "chunk `chunk' (`nb' draws): " as result %6.1f r(t1) as text "
+>  s"
+chunk 3 (67 draws):   89.7 s
+.     clear
+.     quietly svmat double TT, names(c)
+.     save "`OUT'/p13_bkf_draws_c`chunk'.dta", replace
+(file results/p13_bkf_draws_c3.dta not found)
+file results/p13_bkf_draws_c3.dta saved
+.     exit
+
+end of do-file
+
+. do p13a_E_draws bkfreport
+
+. * p13a_E_draws.do -- called by p13_profile_delta.do (Paper, version 5,
+. * Section 7.5): the estimator E of the effect for a given household under
+. * het(qr), its delta-method standard error with the Powell kernel density
+. * (as qreg vce(robust, kernel)) on the sample, and B = 200 bootstrap draws in
+. * which the whole estimator is re-run (the 19 quantile regressions, q_tau,
+. * the reference type, u*, E), with no standard error in the draws.
+. * Argument: what [chunk]
+. *   dgp         the perfect case, beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5 + 3
+> u,
+. *               n = 2000, tau = 0.25: point, the 200 draws and the report;
+. *   bkf c       Burkina (bkf98I.dta), lexp on size male urban i.gse,
+. *               unweighted, tau = 0.25: chunk c of 3 of the 200 draws (seed
+. *               777 + c); chunk 1 also computes the point;
+. *   bkfreport   combines the Burkina chunks and reports.
+. * Reference household: the default real type (continuous regressors at their
+. * mean, binary ones at their most frequent value, a factor at its most
+. * frequent level), recomputed in every draw; in the DGP also the type (5, 1).
+. * It does not call gepwreg: the estimator is programmed here, with official
+. * quantile regressions.  The draws are saved in results/ for p13b.
+. version 16
+
+. clear all
+
+. args what chunk
+
+. set more off
+
+. set varabbrev off
+
+. local OUT "results"
+
+. capture mkdir "results"
+
+. local tau 0.25
+
+. local B   200
+
+. local nch 3
+
+. global TAU `tau'
+
+. numlist "0.05(0.05)0.95"
+
+. global UG `r(numlist)'
+
+. 
+. mata:
+------------------------------------------------- mata (type end to exit) -----
+: real matrix _qr_psi(real matrix Xt, real colvector r, real colvector kv,
+>                     real scalar kb, real scalar u)
+> {
+>     real matrix    H
+>     real colvector s
+>     H = invsym(quadcross(Xt, kv, Xt) / kb)
+>     s = (u :- (r :< 0)) :* (abs(r) :>= 1e-10)
+>     return((Xt :* s) * H)
+> }
+
+: 
+: real rowvector _E_seg(real matrix G, real rowvector ug, real scalar q,
+>                       real rowvector xt, real scalar ustar, real scalar seg,
+>                       real scalar tt)
+> {
+>     real scalar    ng
+>     real rowvector Qr
+>     ng = cols(ug)
+>     Qr = xt * G'
+>     if (q <= Qr[1]) {
+>         seg = 1
+>         tt  = 0
+>     }
+>     else if (q >= Qr[ng]) {
+>         seg = ng - 1
+>         tt  = 1
+>     }
+>     else {
+>         seg = max(selectindex(Qr :<= q))
+>         tt  = (q - Qr[seg]) / (Qr[seg+1] - Qr[seg])
+>     }
+>     ustar = ug[seg] + tt * (ug[seg+1] - ug[seg])
+>     return((1 - tt) * G[seg, .] + tt * G[seg+1, .])
+> }
+
+: 
+: // block of one reference: E (k), SE (k), slope t (k), u*, segment
+: real rowvector _E_pt(real matrix G, real rowvector ug, real scalar q,
+>                      real rowvector xr)
+> {
+>     real scalar    k, ustar, seg, tt
+>     real rowvector bs
+>     k     = cols(xr)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, (xr, 1), ustar, seg, tt)
+>     return((bs[1..k], J(1, 2*k, .), ustar, seg))
+> }
+
+: 
+: real rowvector _E_ref(real matrix G, real rowvector ug, real scalar q,
+>                       real colvector PSIQ, real matrix X, real rowvector xr,
+>                       real rowvector flag, real colvector KB)
+> {
+>     real scalar    n, k, ustar, seg, tt, D, j, clip
+>     real rowvector xt, bs, xbar, out, Qr
+>     real matrix    Xt, P1, P2, Pstar
+>     real colvector core, psi, dd
+>     n  = rows(X)
+>     k  = cols(X)
+>     Xt = (X, J(n, 1, 1))
+>     xt = (xr, 1)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, xt, ustar, seg, tt)
+>     Qr = xt * G'
+>     clip = (q <= Qr[1] | q >= Qr[cols(Qr)])
+>     D  = xt * (G[seg+1, .] - G[seg, .])'
+>     P1 = _qr_psi(Xt, st_data(., "_r" + strofreal(seg)),     st_data(., "_k" +
+>  strofreal(seg)),     KB[seg],     ug[seg])
+>     P2 = _qr_psi(Xt, st_data(., "_r" + strofreal(seg + 1)), st_data(., "_k" +
+>  strofreal(seg + 1)), KB[seg + 1], ug[seg + 1])
+>     Pstar = (1 - tt) * P1 + tt * P2
+>     core  = PSIQ - Pstar * xt'
+>     xbar  = mean(X)
+>     for (j = 1; j <= k; j++) {
+>         if (flag[j]) core = core - ((X[., j] :- xbar[j]) / n) * bs[j]
+>     }
+>     if (clip) core = J(n, 1, 0)
+>     out = J(1, 3*k + 2, .)
+>     for (j = 1; j <= k; j++) {
+>         psi = Pstar[., j] + ((G[seg+1, j] - G[seg, j]) / D) * core
+>         psi = psi :- mean(psi)
+>         out[j]     = bs[j]
+>         out[k + j] = sqrt(quadcross(psi, psi))
+>         dd  = P2[., j] - P1[., j]
+>         dd  = dd :- mean(dd)
+>         out[2*k + j] = (G[seg+1, j] - G[seg, j]) / sqrt(quadcross(dd, dd))
+>     }
+>     out[3*k + 1] = ustar
+>     out[3*k + 2] = seg
+>     return(out)
+> }
+
+: 
+: // _Eres = block of the default reference [, block of the fixed reference]
+: void _E_run(real scalar qh, real scalar qkb, real scalar se)
+> {
+>     real matrix    X, G
+>     real rowvector ug, xr, fl, xf, out
+>     real colvector KB, PSIQ
+>     real scalar    n, tau
+>     G   = st_matrix("_Gr")
+>     ug  = strtoreal(tokens(st_global("UG")))
+>     tau = strtoreal(st_global("TAU"))
+>     xr  = st_matrix("_XR")
+>     fl  = st_matrix("_FL")
+>     xf  = strtoreal(tokens(st_global("XFIX")))
+>     if (se) {
+>         X    = st_data(., tokens(st_global("XV")))
+>         n    = rows(X)
+>         KB   = st_matrix("_KB")
+>         PSIQ = _qr_psi(J(n, 1, 1), st_data(., "_rq"), st_data(., "_kq"), qkb,
+>  tau)
+>         out  = _E_ref(G, ug, qh, PSIQ, X, xr, fl, KB)
+>         if (cols(xf)) out = (out, _E_ref(G, ug, qh, PSIQ, X, xf, J(1, cols(xf
+> ), 0), KB))
+>     }
+>     else {
+>         out = _E_pt(G, ug, qh, xr)
+>         if (cols(xf)) out = (out, _E_pt(G, ug, qh, xf))
+>     }
+>     st_matrix("_Eres", out)
+> }
+
+: 
+: // the default reference type of the DGP: x1 at its mean, x2 at its mode
+: void _ref_dgp()
+> {
+>     real colvector x1, x2
+>     x1 = st_data(., "x1")
+>     x2 = st_data(., "x2")
+>     st_matrix("_XR", (mean(x1), mean(x2) > 0.5))
+>     st_matrix("_FL", (1, 0))
+> }
+
+: 
+: // Burkina: size at its mean, male and urban at their mode, gse at its most
+: // frequent level (dummies g2..g7)
+: void _ref_bkf()
+> {
+>     real colvector s, m, u, g
+>     real rowvector cnt, xr, top
+>     real scalar    l, gm
+>     s = st_data(., "size")
+>     m = st_data(., "male")
+>     u = st_data(., "urban")
+>     g = st_data(., "gse")
+>     cnt = J(1, 7, 0)
+>     for (l = 1; l <= 7; l++) cnt[l] = sum(g :== l)
+>     top = selectindex(cnt :== max(cnt))
+>     gm  = top[1]
+>     xr = (mean(s), mean(m) > 0.5, mean(u) > 0.5)
+>     for (l = 2; l <= 7; l++) xr = (xr, gm == l)
+>     st_matrix("_XR", xr)
+>     st_matrix("_FL", (1, J(1, 8, 0)))
+>     st_numscalar("_gmode", gm)
+> }
+
+: 
+: real colvector _sq(real scalar q, real colvector x1, real colvector x2,
+>                    real scalar s1, real scalar s2)
+> {
+>     real colvector lo, hi, mid, up
+>     real scalar    it
+>     lo = J(rows(x1), 1, 1e-12)
+>     hi = J(rows(x1), 1, 1 - 1e-12)
+>     for (it = 1; it <= 70; it++) {
+>         mid = (lo + hi) :/ 2
+>         up  = (invnormal(mid) + (0.4 :+ s1 :* mid) :* x1 + (0.5 :+ s2 :* mid)
+>  :* x2) :< q
+>         lo  = up :* mid + (1 :- up) :* lo
+>         hi  = up :* hi + (1 :- up) :* mid
+>     }
+>     return((lo + hi) :/ 2)
+> }
+
+: 
+: // truth of the DGP, deterministic: plim E for the default type (5, mode)
+: // then the fixed type (5, 1); also q_tau, u* and beta(u*)
+: real rowvector _truth(real scalar tau, real scalar s1, real scalar s2)
+> {
+>     real scalar    M, it, lo, hi, mid, F, q, mode, ud, uf, us, sg, tt
+>     real colvector x1, p, z0, z1
+>     real rowvector ug, pd, pf
+>     real matrix    Gt
+>     M  = 4000
+>     x1 = 1 :+ 8 :* ((1::M) :- 0.5) :/ M
+>     p  = invlogit(-1 :+ 0.1 :* x1)
+>     z0 = J(M, 1, 0)
+>     z1 = J(M, 1, 1)
+>     mode = (mean(p) > 0.5)
+>     lo = -20
+>     hi = 60
+>     for (it = 1; it <= 70; it++) {
+>         mid = (lo + hi) / 2
+>         F   = mean((1 :- p) :* _sq(mid, x1, z0, s1, s2) + p :* _sq(mid, x1, z
+> 1, s1, s2))
+>         if (F < tau) lo = mid
+>         else         hi = mid
+>     }
+>     q  = (lo + hi) / 2
+>     ud = _sq(q, 5, mode, s1, s2)
+>     uf = _sq(q, 5, 1, s1, s2)
+>     ug = (1..19) :* 0.05
+>     Gt = ((0.4 :+ s1 :* ug)', (0.5 :+ s2 :* ug)', invnormal(ug)')
+>     us = .
+>     sg = .
+>     tt = .
+>     pd = _E_seg(Gt, ug, q, (5, mode, 1), us, sg, tt)
+>     pf = _E_seg(Gt, ug, q, (5, 1, 1), us, sg, tt)
+>     return((pd[1], pd[2], pf[1], pf[2], q, ud, uf, 0.4 + s1*ud, 0.5 + s2*ud, 
+> 0.4 + s1*uf, 0.5 + s2*uf))
+> }
+
+: 
+: // report: E0 the point row, TT the draws, names of the coefficients, nref
+: // blocks, plim (empty if unknown), labels of the references
+: void _report(real rowvector E0, real matrix TT, string rowvector names,
+>              real scalar nref, real rowvector plim, string rowvector rlab)
+> {
+>     real scalar    k, r, j, B, base, ie, sd, rob, cr
+>     real colvector e, srt
+>     k = cols(names)
+>     B = rows(TT)
+>     for (r = 1; r <= nref; r++) {
+>         base = (r - 1) * (3*k + 2)
+>         printf("\n  reference: %s -- u* %6.4f (segment %g), draws whose segme
+> nt changed: %4.1f%%\n",
+>                rlab[r], E0[base + 3*k + 1], E0[base + 3*k + 2], 100 * mean(TT
+> [., base + 3*k + 2] :!= E0[base + 3*k + 2]))
+>         if (cols(plim)) printf("  coefficient     point     plim      t   SE_
+> anal   SD_boot  robust SD  anal/SD  anal/rob  slope t\n")
+>         else            printf("  coefficient     point   SE_anal   SD_boot  
+> robust SD  anal/SD  anal/rob  slope t\n")
+>         for (j = 1; j <= k; j++) {
+>             ie  = base + j
+>             e   = TT[., ie]
+>             sd  = sqrt(variance(e))
+>             srt = sort(e, 1)
+>             rob = (srt[ceil(0.75*B)] - srt[ceil(0.25*B)]) / 1.349
+>             if (cols(plim)) {
+>                 printf("  %-12s %8.4f %8.4f %6.2f  %8.4f  %8.4f  %8.4f   %6.3
+> f   %6.3f   %6.2f\n",
+>                        names[j], E0[ie], plim[(r-1)*k + j], (E0[ie] - plim[(r
+> -1)*k + j]) / E0[ie + k],
+>                        E0[ie + k], sd, rob, E0[ie + k] / sd, E0[ie + k] / rob
+> , E0[ie + 2*k])
+>             }
+>             else {
+>                 printf("  %-12s %8.4f  %8.4f  %8.4f  %8.4f   %6.3f   %6.3f   
+> %6.2f\n",
+>                        names[j], E0[ie], E0[ie + k], sd, rob, E0[ie + k] / sd
+> , E0[ie + k] / rob, E0[ie + 2*k])
+>             }
+>         }
+>     }
+> }
+note: variable cr unused.
+
+: end
+-------------------------------------------------------------------------------
+
+. 
+. * every step of E on the data in memory -> matrix _Eres; se: 1 = with the
+. * analytic SE, 0 = the value only (the draws)
+. capture program drop _E_full
+
+. program define _E_full
+  1.     args se
+  2.     quietly {
+  3.         local k : word count $XV
+  4.         local ng : word count $UG
+  5.         matrix _Gr = J(`ng', `k' + 1, .)
+  6.         matrix _KB = J(`ng', 1, .)
+  7.         local g 0
+  8.         foreach u of global UG {
+  9.             local ++g
+ 10.             if `se' {
+ 11.                 capture qreg $Y $XV, quantile(`u') vce(robust, kernel)
+ 12.                 if _rc qreg $Y $XV, quantile(`u') vce(robust, kernel) iter
+> ate(5000)
+ 13.             }
+ 14.             else {
+ 15.                 capture _qreg $Y $XV, quant(`u')
+ 16.                 if _rc _qreg $Y $XV, quant(`u') iterate(5000)
+ 17.             }
+ 18.             local j 0
+ 19.             local xb 0
+ 20.             foreach v of global XV {
+ 21.                 local ++j
+ 22.                 matrix _Gr[`g', `j'] = _b[`v']
+ 23.             }
+ 24.             matrix _Gr[`g', `k' + 1] = _b[_cons]
+ 25.             if `se' {
+ 26.                 local kb = e(kbwidth)
+ 27.                 matrix _KB[`g', 1] = `kb'
+ 28.                 capture drop _r`g' _k`g'
+ 29.                 predict double _r`g', residuals
+ 30.                 * qreg's Epanechnikov kernel (_qreg_kernel, private to qre
+> g.ado)
+.                 generate double _k`g' = 0.75*(1 - 0.2*(_r`g'/`kb')^2)/sqrt(5)
+>  * (abs(_r`g'/`kb') < sqrt(5))
+ 31.             }
+ 32.         }
+ 33.         local qkb 0
+ 34.         if `se' {
+ 35.             capture qreg $Y, quantile($TAU) vce(robust, kernel)
+ 36.             if _rc qreg $Y, quantile($TAU) vce(robust, kernel) iterate(500
+> 0)
+ 37.             local qh  = _b[_cons]
+ 38.             local qkb = e(kbwidth)
+ 39.             capture drop _rq _kq
+ 40.             generate double _rq = $Y - `qh'
+ 41.             generate double _kq = 0.75*(1 - 0.2*(_rq/`qkb')^2)/sqrt(5) * (
+> abs(_rq/`qkb') < sqrt(5))
+ 42.         }
+ 43.         else {
+ 44.             capture _qreg $Y, quant($TAU)
+ 45.             if _rc _qreg $Y, quant($TAU) iterate(5000)
+ 46.             local qh = _b[_cons]
+ 47.         }
+ 48.         * the default reference type, from this sample
+.         mata: _ref_$REFTYPE()
+ 49.         mata: _E_run(`qh', `qkb', `se')
+ 50.         if `se' drop _r* _k*
+ 51.     }
+ 52. end
+
+. 
+. capture program drop _dgp
+
+. program define _dgp
+  1.     args nobs s1 s2
+  2.     quietly {
+  3.         set obs `nobs'
+  4.         generate double x1 = 1 + 8*runiform()
+  5.         generate double x2 = runiform() < invlogit(-1 + 0.1*x1)
+  6.         generate double u  = runiform()
+  7.         generate double y  = invnormal(u) + (0.4 + `s1'*u)*x1 + (0.5 + `s2
+> '*u)*x2
+  8.         drop u
+  9.     }
+ 10. end
+
+. 
+. capture program drop _bkf_data
+
+. program define _bkf_data
+  1.     use bkf98I, clear
+  2.     quietly {
+  3.         generate double lexp = ln(exppc)
+  4.         generate byte male  = (sex == 1)
+  5.         generate byte urban = (zone == 2)
+  6.         forvalues l = 2/7 {
+  7.             generate byte g`l' = (gse == `l')
+  8.         }
+  9.         keep lexp size male urban gse g2-g7
+ 10.         keep if !missing(lexp, size, male, urban, gse)
+ 11.     }
+ 12. end
+
+. 
+. * ---- the perfect case -----------------------------------------------------
+> -------------
+. if "`what'" == "dgp" {
+.     global Y y
+.     global XV x1 x2
+.     global XFIX 5 1
+.     global REFTYPE dgp
+.     mata: TR = _truth(`tau', 2, 3)
+.     mata: printf("\ntruth: q_tau %8.4f; default type (5, 0): u* %6.4f, beta(u
+> *) (%7.4f, %7.4f), plim E (%7.4f, %7.4f)\n", TR[5], TR[6], TR[8], TR[9], TR[1
+> ], TR[2])
+.     mata: printf("       fixed type (5, 1): u* %6.4f, beta(u*) (%7.4f, %7.4f)
+> , plim E (%7.4f, %7.4f)\n", TR[7], TR[10], TR[11], TR[3], TR[4])
+.     set seed 1
+.     _dgp 2000 2 3
+.     _E_full 1
+.     matrix E0 = _Eres
+.     keep y x1 x2
+.     matrix TT = J(`B', colsof(E0), .)
+.     set seed 777
+.     timer clear 1
+.     timer on 1
+.     forvalues b = 1/`B' {
+  2.         preserve
+  3.         bsample
+  4.         _E_full 0
+  5.         restore
+  6.         matrix TT[`b', 1] = _Eres
+  7.     }
+.     timer off 1
+.     quietly timer list 1
+.     di as text "bootstrap time: " as result %6.1f r(t1) as text " s"
+.     di as text _n "==== perfect case: beta_x1(u) = 0.4 + 2u, beta_x2(u) = 0.5
+>  + 3u, n = 2000, tau = `tau', B = `B'"
+.     mata: _report(st_matrix("E0"), st_matrix("TT"), ("x1", "x2"), 2, TR[1..4]
+> , ("default type (x1 mean, x2 mode)", "fixed type (5, 1)"))
+.     preserve
+.     clear
+.     quietly svmat double TT, names(c)
+.     save "`OUT'/p13_dgp_draws.dta", replace
+.     restore
+.     exit
+. }
+
+. 
+. * ---- Burkina: one chunk of the draws --------------------------------------
+> -------------
+. if "`what'" == "bkf" {
+.     global Y lexp
+.     global XV size male urban g2 g3 g4 g5 g6 g7
+.     global XFIX
+.     global REFTYPE bkf
+.     _bkf_data
+.     if `chunk' == 1 {
+.         timer clear 2
+.         timer on 2
+.         _E_full 1
+.         timer off 2
+.         quietly timer list 2
+.         di as text "point with its SE: " as result %6.1f r(t2) as text " s; m
+> ost frequent gse level " as result _gmode
+.         matrix E0 = _Eres
+.         preserve
+.         clear
+.         quietly svmat double E0, names(c)
+.         save "`OUT'/p13_bkf_point.dta", replace
+.         restore
+.     }
+.     local b1 = floor((`chunk' - 1) * `B' / `nch') + 1
+.     local b2 = floor(`chunk' * `B' / `nch')
+.     local nb = `b2' - `b1' + 1
+.     matrix TT = J(`nb', 29, .)
+.     set seed `= 777 + `chunk''
+.     timer clear 1
+.     timer on 1
+.     forvalues b = 1/`nb' {
+  2.         preserve
+  3.         bsample
+  4.         _E_full 0
+  5.         restore
+  6.         matrix TT[`b', 1] = _Eres
+  7.         if mod(`b', 20) == 0 di as text "  chunk `chunk': `b' of `nb'"
+  8.     }
+.     timer off 1
+.     quietly timer list 1
+.     di as text "chunk `chunk' (`nb' draws): " as result %6.1f r(t1) as text "
+>  s"
+.     clear
+.     quietly svmat double TT, names(c)
+.     save "`OUT'/p13_bkf_draws_c`chunk'.dta", replace
+.     exit
+. }
+
+. 
+. * ---- Burkina: combine and report ------------------------------------------
+> ---------------
+. if "`what'" == "bkfreport" {
+.     use "`OUT'/p13_bkf_point.dta", clear
+.     mkmat c*, matrix(E0)
+.     use "`OUT'/p13_bkf_draws_c1.dta", clear
+.     forvalues c = 2/`nch' {
+  2.         append using "`OUT'/p13_bkf_draws_c`c'.dta"
+  3.     }
+.     mkmat c*, matrix(TT)
+.     di as text _n "==== Burkina (bkf98I), lexp on size male urban i.gse, unwe
+> ighted, n = 8478, tau = `tau', B = " rowsof(TT)
+
+==== Burkina (bkf98I), lexp on size male urban i.gse, unweighted, n = 8478, tau
+>  = 0.25, B = 200
+.     mata: _report(st_matrix("E0"), st_matrix("TT"), ("size", "male", "urban",
+>  "2.gse", "3.gse", "4.gse", "5.gse", "6.gse", "7.gse"), 1, J(1, 0, .), ("defa
+> ult type (size mean; male, urban, gse at their mode)"))
+
+  reference: default type (size mean; male, urban, gse at their mode) -- u* 0.3
+> 198 (segment 6), draws whose segment changed:  0.0%
+  coefficient     point   SE_anal   SD_boot  robust SD  anal/SD  anal/rob  slop
+> e t
+  size          -0.0436    0.0021    0.0023    0.0023    0.905    0.918    -0.3
+> 1
+  male           0.0002    0.0335    0.0346    0.0375    0.969    0.893    -1.0
+> 6
+  urban          0.2683    0.0263    0.0231    0.0228    1.140    1.156     0.6
+> 6
+  2.gse         -0.5791    0.0562    0.0560    0.0521    1.004    1.079     1.2
+> 0
+  3.gse         -0.6483    0.0468    0.0507    0.0462    0.922    1.012    -1.1
+> 3
+  4.gse         -0.5965    0.0768    0.0633    0.0605    1.214    1.270    -2.0
+> 0
+  5.gse         -0.8907    0.0471    0.0489    0.0501    0.963    0.940    -0.3
+> 9
+  6.gse         -1.0804    0.0421    0.0440    0.0434    0.956    0.968    -0.8
+> 1
+  7.gse         -0.9290    0.0524    0.0533    0.0523    0.984    1.002    -0.7
+> 8
+.     exit
+
+end of do-file
+
+. do p13b_E_densities dgp
+
+. * p13b_E_densities.do -- called by p13_profile_delta.do (Paper, version 5,
+. * Section 7.5): the delta-method standard error of E with two densities for
+. * the quantile-regression influence function, judged by the SAME draws of
+. * p13a_E_draws.do (the draws do not depend on how the standard error is
+. * computed):
+. *   Powell kernel     : one bandwidth for every household (qreg vce(robust, k
+> ernel));
+. *   Hendricks-Koenker : each household's own density 2h/(x'b(u+h) - x'b(u-h))
+. *                       (qreg's default vce(robust)); Siddiqui quotient for q
+> _tau.
+. * Argument: dgp | bkf.  Checks: the Stata form u(1-u) H X'X H of both
+. * reproduces e(V) of qreg; the point E equals p13a's.  Report: the two
+. * standard errors against the standard deviation of the draws -- the numbers
+. * of Section 7.5.  It does not call gepwreg.
+. version 16
+
+. clear all
+
+. args what
+
+. set more off
+
+. set varabbrev off
+
+. local OUT "results"
+
+. capture mkdir "results"
+
+. local tau 0.25
+
+. global TAU `tau'
+
+. numlist "0.05(0.05)0.95"
+
+. global UG `r(numlist)'
+
+. 
+. mata:
+------------------------------------------------- mata (type end to exit) -----
+: real matrix _psiK(real matrix Xt, real colvector r, real colvector kv,
+>                   real scalar kb, real scalar u)
+> {
+>     real matrix    H
+>     real colvector s
+>     H = invsym(quadcross(Xt, kv, Xt) / kb)
+>     s = (u :- (r :< 0)) :* (abs(r) :>= 1e-10)
+>     return((Xt :* s) * H)
+> }
+
+: 
+: real matrix _psiF(real matrix Xt, real colvector r, real colvector f, real sc
+> alar u)
+> {
+>     real matrix    H
+>     real colvector s
+>     H = invsym(quadcross(Xt, f, Xt))
+>     s = (u :- (r :< 0)) :* (abs(r) :>= 1e-10)
+>     return((Xt :* s) * H)
+> }
+
+: 
+: // check (1): both Stata forms against e(V) of the two qreg runs; row g of _C
+> HK
+: void _chk(real scalar g, real scalar u, string scalar vk, string scalar vf,
+>           real scalar kb, string scalar rname, string scalar kname,
+>           string scalar fname, string scalar xv)
+> {
+>     real matrix    X, Xt, HK, HF, C
+>     real colvector kv, f
+>     real scalar    n
+>     X  = (strlen(xv) ? st_data(., tokens(xv)) : J(st_nobs(), 0, .))
+>     n  = rows(X)
+>     Xt = (X, J(n, 1, 1))
+>     kv = st_data(., kname)
+>     f  = st_data(., fname)
+>     HK = invsym(quadcross(Xt, kv, Xt) / kb)
+>     HF = invsym(quadcross(Xt, f, Xt))
+>     C  = st_matrix("_CHK")
+>     C[g, 1] = max(abs(sqrt(diagonal(u*(1-u) * HK * quadcross(Xt, Xt) * HK)) :
+> / sqrt(diagonal(st_matrix(vk))) :- 1))
+>     C[g, 2] = max(abs(sqrt(diagonal(u*(1-u) * HF * quadcross(Xt, Xt) * HF)) :
+> / sqrt(diagonal(st_matrix(vf))) :- 1))
+>     st_matrix("_CHK", C)
+> }
+note: argument rname unused.
+
+: 
+: real rowvector _E_seg(real matrix G, real rowvector ug, real scalar q,
+>                       real rowvector xt, real scalar ustar, real scalar seg,
+>                       real scalar tt)
+> {
+>     real scalar    ng
+>     real rowvector Qr
+>     ng = cols(ug)
+>     Qr = xt * G'
+>     if (q <= Qr[1]) {
+>         seg = 1
+>         tt  = 0
+>     }
+>     else if (q >= Qr[ng]) {
+>         seg = ng - 1
+>         tt  = 1
+>     }
+>     else {
+>         seg = max(selectindex(Qr :<= q))
+>         tt  = (q - Qr[seg]) / (Qr[seg+1] - Qr[seg])
+>     }
+>     ustar = ug[seg] + tt * (ug[seg+1] - ug[seg])
+>     return((1 - tt) * G[seg, .] + tt * G[seg+1, .])
+> }
+
+: 
+: // block of one reference: E (k), SE kernel (k), SE Hendricks-Koenker (k), u*
+> , segment
+: real rowvector _E_ref2(real matrix G, real rowvector ug, real scalar q,
+>                        real colvector PQK, real colvector PQF, real matrix X,
+>                        real rowvector xr, real rowvector flag, real colvector
+>  KB)
+> {
+>     real scalar    n, k, ustar, seg, tt, D, j, clip, m
+>     real rowvector xt, bs, xbar, out, Qr
+>     real matrix    Xt, P1, P2, Pstar
+>     real colvector core, psi, r1, r2
+>     n  = rows(X)
+>     k  = cols(X)
+>     Xt = (X, J(n, 1, 1))
+>     xt = (xr, 1)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, xt, ustar, seg, tt)
+>     Qr = xt * G'
+>     clip = (q <= Qr[1] | q >= Qr[cols(Qr)])
+>     D  = xt * (G[seg+1, .] - G[seg, .])'
+>     r1 = st_data(., "_r" + strofreal(seg))
+>     r2 = st_data(., "_r" + strofreal(seg + 1))
+>     xbar = mean(X)
+>     out  = J(1, 3*k + 2, .)
+>     out[1..k] = bs[1..k]
+>     for (m = 1; m <= 2; m++) {
+>         if (m == 1) {
+>             P1 = _psiK(Xt, r1, st_data(., "_k" + strofreal(seg)),     KB[seg]
+> ,     ug[seg])
+>             P2 = _psiK(Xt, r2, st_data(., "_k" + strofreal(seg + 1)), KB[seg 
+> + 1], ug[seg + 1])
+>             core = PQK
+>         }
+>         else {
+>             P1 = _psiF(Xt, r1, st_data(., "_f" + strofreal(seg)),     ug[seg]
+> )
+>             P2 = _psiF(Xt, r2, st_data(., "_f" + strofreal(seg + 1)), ug[seg 
+> + 1])
+>             core = PQF
+>         }
+>         Pstar = (1 - tt) * P1 + tt * P2
+>         core  = core - Pstar * xt'
+>         for (j = 1; j <= k; j++) {
+>             if (flag[j]) core = core - ((X[., j] :- xbar[j]) / n) * bs[j]
+>         }
+>         if (clip) core = J(n, 1, 0)
+>         for (j = 1; j <= k; j++) {
+>             psi = Pstar[., j] + ((G[seg+1, j] - G[seg, j]) / D) * core
+>             psi = psi :- mean(psi)
+>             out[m*k + j] = sqrt(quadcross(psi, psi))
+>         }
+>     }
+>     out[3*k + 1] = ustar
+>     out[3*k + 2] = seg
+>     return(out)
+> }
+
+: 
+: void _E_run2(real scalar qh, real scalar qkb)
+> {
+>     real matrix    X, G
+>     real rowvector ug, xr, fl, xf, out
+>     real colvector KB, PQK, PQF
+>     real scalar    n, tau
+>     G   = st_matrix("_Gr")
+>     ug  = strtoreal(tokens(st_global("UG")))
+>     tau = strtoreal(st_global("TAU"))
+>     xr  = st_matrix("_XR")
+>     fl  = st_matrix("_FL")
+>     xf  = strtoreal(tokens(st_global("XFIX")))
+>     X   = st_data(., tokens(st_global("XV")))
+>     n   = rows(X)
+>     KB  = st_matrix("_KB")
+>     PQK = _psiK(J(n, 1, 1), st_data(., "_rq"), st_data(., "_kq"), qkb, tau)
+>     PQF = _psiF(J(n, 1, 1), st_data(., "_rq"), st_data(., "_fq"), tau)
+>     out = _E_ref2(G, ug, qh, PQK, PQF, X, xr, fl, KB)
+>     if (cols(xf)) out = (out, _E_ref2(G, ug, qh, PQK, PQF, X, xf, J(1, cols(x
+> f), 0), KB))
+>     st_matrix("_Eres", out)
+> }
+
+: 
+: void _ref_dgp()
+> {
+>     real colvector x1, x2
+>     x1 = st_data(., "x1")
+>     x2 = st_data(., "x2")
+>     st_matrix("_XR", (mean(x1), mean(x2) > 0.5))
+>     st_matrix("_FL", (1, 0))
+> }
+
+: 
+: void _ref_bkf()
+> {
+>     real colvector s, m, u, g
+>     real rowvector cnt, xr, top
+>     real scalar    l, gm
+>     s = st_data(., "size")
+>     m = st_data(., "male")
+>     u = st_data(., "urban")
+>     g = st_data(., "gse")
+>     cnt = J(1, 7, 0)
+>     for (l = 1; l <= 7; l++) cnt[l] = sum(g :== l)
+>     top = selectindex(cnt :== max(cnt))
+>     gm  = top[1]
+>     xr = (mean(s), mean(m) > 0.5, mean(u) > 0.5)
+>     for (l = 2; l <= 7; l++) xr = (xr, gm == l)
+>     st_matrix("_XR", xr)
+>     st_matrix("_FL", (1, J(1, 8, 0)))
+> }
+
+: 
+: void _report4(real rowvector E0, real matrix TT, string rowvector names,
+>               real scalar nref, string rowvector rlab)
+> {
+>     real scalar    k, r, j, B, base, ie, sd, rob
+>     real colvector e, srt
+>     k = cols(names)
+>     B = rows(TT)
+>     for (r = 1; r <= nref; r++) {
+>         base = (r - 1) * (3*k + 2)
+>         printf("\n  reference: %s -- u* %6.4f (segment %g)\n", rlab[r], E0[ba
+> se + 3*k + 1], E0[base + 3*k + 2])
+>         printf("  coefficient     point   SE_kern     SE_HK   SD_boot  robust
+>  SD  kern/SD    HK/SD   HK/rob\n")
+>         for (j = 1; j <= k; j++) {
+>             ie  = base + j
+>             e   = TT[., ie]
+>             sd  = sqrt(variance(e))
+>             srt = sort(e, 1)
+>             rob = (srt[ceil(0.75*B)] - srt[ceil(0.25*B)]) / 1.349
+>             printf("  %-12s %8.4f  %8.4f  %8.4f  %8.4f   %8.4f   %6.3f   %6.3
+> f   %6.3f\n",
+>                    names[j], E0[ie], E0[ie + k], E0[ie + 2*k], sd, rob,
+>                    E0[ie + k] / sd, E0[ie + 2*k] / sd, E0[ie + 2*k] / rob)
+>         }
+>     }
+> }
+
+: end
+-------------------------------------------------------------------------------
+
+. 
+. * the point of E with both SEs -> _Eres; _CHK holds check (1)
+. capture program drop _E_point2
+
+. program define _E_point2
+  1.     quietly {
+  2.         local k  : word count $XV
+  3.         local ng : word count $UG
+  4.         matrix _Gr  = J(`ng', `k' + 1, .)
+  5.         matrix _KB  = J(`ng', 1, .)
+  6.         matrix _CHK = J(`ng' + 1, 2, .)
+  7.         tempname VK VF
+  8.         local g 0
+  9.         foreach u of global UG {
+ 10.             local ++g
+ 11.             qreg $Y $XV, quantile(`u') vce(robust, kernel)
+ 12.             matrix `VK' = e(V)
+ 13.             local kb = e(kbwidth)
+ 14.             matrix _KB[`g', 1] = `kb'
+ 15.             capture drop _r`g' _k`g' _f`g'
+ 16.             predict double _r`g', residuals
+ 17.             generate double _k`g' = 0.75*(1 - 0.2*(_r`g'/`kb')^2)/sqrt(5) 
+> * (abs(_r`g'/`kb') < sqrt(5))
+ 18.             qreg $Y $XV, quantile(`u') vce(robust)
+ 19.             matrix `VF' = e(V)
+ 20.             local j 0
+ 21.             foreach v of global XV {
+ 22.                 local ++j
+ 23.                 matrix _Gr[`g', `j'] = _b[`v']
+ 24.             }
+ 25.             matrix _Gr[`g', `k' + 1] = _b[_cons]
+ 26.             local h = e(bwidth)
+ 27.             * qreg's fitted method (VCE_fitted in qreg.ado)
+.             _qreg $Y $XV, quant(`=`u' - `h'')
+ 28.             predict double _xl, xb
+ 29.             _qreg $Y $XV, quant(`=`u' + `h'')
+ 30.             predict double _xu, xb
+ 31.             generate double _f`g' = cond(_xu - _xl > sqrt(c(epsdouble)), 2
+> *`h'/(_xu - _xl), 0)
+ 32.             drop _xl _xu
+ 33.             mata: _chk(`g', `u', "`VK'", "`VF'", `kb', "_r`g'", "_k`g'", "
+> _f`g'", "$XV")
+ 34.         }
+ 35.         local g = `ng' + 1
+ 36.         qreg $Y, quantile($TAU) vce(robust, kernel)
+ 37.         matrix `VK' = e(V)
+ 38.         local qh  = _b[_cons]
+ 39.         local qkb = e(kbwidth)
+ 40.         capture drop _rq _kq _fq
+ 41.         generate double _rq = $Y - `qh'
+ 42.         generate double _kq = 0.75*(1 - 0.2*(_rq/`qkb')^2)/sqrt(5) * (abs(
+> _rq/`qkb') < sqrt(5))
+ 43.         qreg $Y, quantile($TAU) vce(robust)
+ 44.         matrix `VF' = e(V)
+ 45.         local hq = e(bwidth)
+ 46.         _qreg $Y, quant(`=$TAU - `hq'')
+ 47.         local ql = _b[_cons]
+ 48.         _qreg $Y, quant(`=$TAU + `hq'')
+ 49.         local qu = _b[_cons]
+ 50.         generate double _fq = cond(`qu' - `ql' > sqrt(c(epsdouble)), 2*`hq
+> '/(`qu' - `ql'), 0)
+ 51.         mata: _chk(`g', $TAU, "`VK'", "`VF'", `qkb', "_rq", "_kq", "_fq", 
+> "")
+ 52.         mata: _ref_$REFTYPE()
+ 53.         mata: _E_run2(`qh', `qkb')
+ 54.     }
+ 55. end
+
+. 
+. capture program drop _dgp
+
+. program define _dgp
+  1.     args nobs s1 s2
+  2.     quietly {
+  3.         set obs `nobs'
+  4.         generate double x1 = 1 + 8*runiform()
+  5.         generate double x2 = runiform() < invlogit(-1 + 0.1*x1)
+  6.         generate double u  = runiform()
+  7.         generate double y  = invnormal(u) + (0.4 + `s1'*u)*x1 + (0.5 + `s2
+> '*u)*x2
+  8.         drop u
+  9.     }
+ 10. end
+
+. 
+. capture program drop _bkf_data
+
+. program define _bkf_data
+  1.     use bkf98I, clear
+  2.     quietly {
+  3.         generate double lexp = ln(exppc)
+  4.         generate byte male  = (sex == 1)
+  5.         generate byte urban = (zone == 2)
+  6.         forvalues l = 2/7 {
+  7.             generate byte g`l' = (gse == `l')
+  8.         }
+  9.         keep lexp size male urban gse g2-g7
+ 10.         keep if !missing(lexp, size, male, urban, gse)
+ 11.     }
+ 12. end
+
+. 
+. if "`what'" == "dgp" {
+.     global Y y
+.     global XV x1 x2
+.     global XFIX 5 1
+.     global REFTYPE dgp
+.     set seed 1
+.     _dgp 2000 2 3
+.     _E_point2
+.     matrix E0 = _Eres
+.     mata: C = st_matrix("_CHK"); printf("\n(1) Stata forms against e(V), larg
+> est relative SE gap over 19 grid points and q: kernel %9.2e, fitted %9.2e\n",
+>  max(C[., 1]), max(C[., 2]))
+
+(1) Stata forms against e(V), largest relative SE gap over 19 grid points and q
+> : kernel  1.21e-14, fitted  3.24e-14
+.     di as text "(2) p13a's point (printed by p13a above): default (0.8016, 1.
+> 5653), fixed (0.6198, 1.1077)"
+(2) p13a's point (printed by p13a above): default (0.8016, 1.5653), fixed (0.61
+> 98, 1.1077)
+.     mata: E0 = st_matrix("E0"); printf("    p13b's point: default (%6.4f, %6.
+> 4f), fixed (%6.4f, %6.4f)\n", E0[1], E0[2], E0[9], E0[10])
+    p13b's point: default (0.8016, 1.5653), fixed (0.6198, 1.1077)
+.     use "`OUT'/p13_dgp_draws.dta", clear
+.     mkmat c*, matrix(TT)
+.     di as text _n "(3) perfect case, n = 2000, tau = `tau', the 200 draws of 
+> p13a"
+
+(3) perfect case, n = 2000, tau = 0.25, the 200 draws of p13a
+.     mata: _report4(st_matrix("E0"), st_matrix("TT"), ("x1", "x2"), 2, ("defau
+> lt type (x1 mean, x2 mode)", "fixed type (5, 1)"))
+
+  reference: default type (x1 mean, x2 mode) -- u* 0.2116 (segment 4)
+  coefficient     point   SE_kern     SE_HK   SD_boot  robust SD  kern/SD    HK
+> /SD   HK/rob
+  x1             0.8016    0.0476    0.0388    0.0420     0.0422    1.133    0.
+> 922    0.919
+  x2             1.5653    0.2990    0.2790    0.2881     0.2883    1.038    0.
+> 968    0.968
+
+  reference: fixed type (5, 1) -- u* 0.1346 (segment 2)
+  coefficient     point   SE_kern     SE_HK   SD_boot  robust SD  kern/SD    HK
+> /SD   HK/rob
+  x1             0.6198    0.0484    0.0450    0.0455     0.0471    1.064    0.
+> 988    0.955
+  x2             1.1077    0.1812    0.1806    0.2037     0.1871    0.890    0.
+> 887    0.965
+.     exit
+
+end of do-file
+
+. do p13b_E_densities bkf
+
+. * p13b_E_densities.do -- called by p13_profile_delta.do (Paper, version 5,
+. * Section 7.5): the delta-method standard error of E with two densities for
+. * the quantile-regression influence function, judged by the SAME draws of
+. * p13a_E_draws.do (the draws do not depend on how the standard error is
+. * computed):
+. *   Powell kernel     : one bandwidth for every household (qreg vce(robust, k
+> ernel));
+. *   Hendricks-Koenker : each household's own density 2h/(x'b(u+h) - x'b(u-h))
+. *                       (qreg's default vce(robust)); Siddiqui quotient for q
+> _tau.
+. * Argument: dgp | bkf.  Checks: the Stata form u(1-u) H X'X H of both
+. * reproduces e(V) of qreg; the point E equals p13a's.  Report: the two
+. * standard errors against the standard deviation of the draws -- the numbers
+. * of Section 7.5.  It does not call gepwreg.
+. version 16
+
+. clear all
+
+. args what
+
+. set more off
+
+. set varabbrev off
+
+. local OUT "results"
+
+. capture mkdir "results"
+
+. local tau 0.25
+
+. global TAU `tau'
+
+. numlist "0.05(0.05)0.95"
+
+. global UG `r(numlist)'
+
+. 
+. mata:
+------------------------------------------------- mata (type end to exit) -----
+: real matrix _psiK(real matrix Xt, real colvector r, real colvector kv,
+>                   real scalar kb, real scalar u)
+> {
+>     real matrix    H
+>     real colvector s
+>     H = invsym(quadcross(Xt, kv, Xt) / kb)
+>     s = (u :- (r :< 0)) :* (abs(r) :>= 1e-10)
+>     return((Xt :* s) * H)
+> }
+
+: 
+: real matrix _psiF(real matrix Xt, real colvector r, real colvector f, real sc
+> alar u)
+> {
+>     real matrix    H
+>     real colvector s
+>     H = invsym(quadcross(Xt, f, Xt))
+>     s = (u :- (r :< 0)) :* (abs(r) :>= 1e-10)
+>     return((Xt :* s) * H)
+> }
+
+: 
+: // check (1): both Stata forms against e(V) of the two qreg runs; row g of _C
+> HK
+: void _chk(real scalar g, real scalar u, string scalar vk, string scalar vf,
+>           real scalar kb, string scalar rname, string scalar kname,
+>           string scalar fname, string scalar xv)
+> {
+>     real matrix    X, Xt, HK, HF, C
+>     real colvector kv, f
+>     real scalar    n
+>     X  = (strlen(xv) ? st_data(., tokens(xv)) : J(st_nobs(), 0, .))
+>     n  = rows(X)
+>     Xt = (X, J(n, 1, 1))
+>     kv = st_data(., kname)
+>     f  = st_data(., fname)
+>     HK = invsym(quadcross(Xt, kv, Xt) / kb)
+>     HF = invsym(quadcross(Xt, f, Xt))
+>     C  = st_matrix("_CHK")
+>     C[g, 1] = max(abs(sqrt(diagonal(u*(1-u) * HK * quadcross(Xt, Xt) * HK)) :
+> / sqrt(diagonal(st_matrix(vk))) :- 1))
+>     C[g, 2] = max(abs(sqrt(diagonal(u*(1-u) * HF * quadcross(Xt, Xt) * HF)) :
+> / sqrt(diagonal(st_matrix(vf))) :- 1))
+>     st_matrix("_CHK", C)
+> }
+note: argument rname unused.
+
+: 
+: real rowvector _E_seg(real matrix G, real rowvector ug, real scalar q,
+>                       real rowvector xt, real scalar ustar, real scalar seg,
+>                       real scalar tt)
+> {
+>     real scalar    ng
+>     real rowvector Qr
+>     ng = cols(ug)
+>     Qr = xt * G'
+>     if (q <= Qr[1]) {
+>         seg = 1
+>         tt  = 0
+>     }
+>     else if (q >= Qr[ng]) {
+>         seg = ng - 1
+>         tt  = 1
+>     }
+>     else {
+>         seg = max(selectindex(Qr :<= q))
+>         tt  = (q - Qr[seg]) / (Qr[seg+1] - Qr[seg])
+>     }
+>     ustar = ug[seg] + tt * (ug[seg+1] - ug[seg])
+>     return((1 - tt) * G[seg, .] + tt * G[seg+1, .])
+> }
+
+: 
+: // block of one reference: E (k), SE kernel (k), SE Hendricks-Koenker (k), u*
+> , segment
+: real rowvector _E_ref2(real matrix G, real rowvector ug, real scalar q,
+>                        real colvector PQK, real colvector PQF, real matrix X,
+>                        real rowvector xr, real rowvector flag, real colvector
+>  KB)
+> {
+>     real scalar    n, k, ustar, seg, tt, D, j, clip, m
+>     real rowvector xt, bs, xbar, out, Qr
+>     real matrix    Xt, P1, P2, Pstar
+>     real colvector core, psi, r1, r2
+>     n  = rows(X)
+>     k  = cols(X)
+>     Xt = (X, J(n, 1, 1))
+>     xt = (xr, 1)
+>     ustar = .
+>     seg   = .
+>     tt    = .
+>     bs = _E_seg(G, ug, q, xt, ustar, seg, tt)
+>     Qr = xt * G'
+>     clip = (q <= Qr[1] | q >= Qr[cols(Qr)])
+>     D  = xt * (G[seg+1, .] - G[seg, .])'
+>     r1 = st_data(., "_r" + strofreal(seg))
+>     r2 = st_data(., "_r" + strofreal(seg + 1))
+>     xbar = mean(X)
+>     out  = J(1, 3*k + 2, .)
+>     out[1..k] = bs[1..k]
+>     for (m = 1; m <= 2; m++) {
+>         if (m == 1) {
+>             P1 = _psiK(Xt, r1, st_data(., "_k" + strofreal(seg)),     KB[seg]
+> ,     ug[seg])
+>             P2 = _psiK(Xt, r2, st_data(., "_k" + strofreal(seg + 1)), KB[seg 
+> + 1], ug[seg + 1])
+>             core = PQK
+>         }
+>         else {
+>             P1 = _psiF(Xt, r1, st_data(., "_f" + strofreal(seg)),     ug[seg]
+> )
+>             P2 = _psiF(Xt, r2, st_data(., "_f" + strofreal(seg + 1)), ug[seg 
+> + 1])
+>             core = PQF
+>         }
+>         Pstar = (1 - tt) * P1 + tt * P2
+>         core  = core - Pstar * xt'
+>         for (j = 1; j <= k; j++) {
+>             if (flag[j]) core = core - ((X[., j] :- xbar[j]) / n) * bs[j]
+>         }
+>         if (clip) core = J(n, 1, 0)
+>         for (j = 1; j <= k; j++) {
+>             psi = Pstar[., j] + ((G[seg+1, j] - G[seg, j]) / D) * core
+>             psi = psi :- mean(psi)
+>             out[m*k + j] = sqrt(quadcross(psi, psi))
+>         }
+>     }
+>     out[3*k + 1] = ustar
+>     out[3*k + 2] = seg
+>     return(out)
+> }
+
+: 
+: void _E_run2(real scalar qh, real scalar qkb)
+> {
+>     real matrix    X, G
+>     real rowvector ug, xr, fl, xf, out
+>     real colvector KB, PQK, PQF
+>     real scalar    n, tau
+>     G   = st_matrix("_Gr")
+>     ug  = strtoreal(tokens(st_global("UG")))
+>     tau = strtoreal(st_global("TAU"))
+>     xr  = st_matrix("_XR")
+>     fl  = st_matrix("_FL")
+>     xf  = strtoreal(tokens(st_global("XFIX")))
+>     X   = st_data(., tokens(st_global("XV")))
+>     n   = rows(X)
+>     KB  = st_matrix("_KB")
+>     PQK = _psiK(J(n, 1, 1), st_data(., "_rq"), st_data(., "_kq"), qkb, tau)
+>     PQF = _psiF(J(n, 1, 1), st_data(., "_rq"), st_data(., "_fq"), tau)
+>     out = _E_ref2(G, ug, qh, PQK, PQF, X, xr, fl, KB)
+>     if (cols(xf)) out = (out, _E_ref2(G, ug, qh, PQK, PQF, X, xf, J(1, cols(x
+> f), 0), KB))
+>     st_matrix("_Eres", out)
+> }
+
+: 
+: void _ref_dgp()
+> {
+>     real colvector x1, x2
+>     x1 = st_data(., "x1")
+>     x2 = st_data(., "x2")
+>     st_matrix("_XR", (mean(x1), mean(x2) > 0.5))
+>     st_matrix("_FL", (1, 0))
+> }
+
+: 
+: void _ref_bkf()
+> {
+>     real colvector s, m, u, g
+>     real rowvector cnt, xr, top
+>     real scalar    l, gm
+>     s = st_data(., "size")
+>     m = st_data(., "male")
+>     u = st_data(., "urban")
+>     g = st_data(., "gse")
+>     cnt = J(1, 7, 0)
+>     for (l = 1; l <= 7; l++) cnt[l] = sum(g :== l)
+>     top = selectindex(cnt :== max(cnt))
+>     gm  = top[1]
+>     xr = (mean(s), mean(m) > 0.5, mean(u) > 0.5)
+>     for (l = 2; l <= 7; l++) xr = (xr, gm == l)
+>     st_matrix("_XR", xr)
+>     st_matrix("_FL", (1, J(1, 8, 0)))
+> }
+
+: 
+: void _report4(real rowvector E0, real matrix TT, string rowvector names,
+>               real scalar nref, string rowvector rlab)
+> {
+>     real scalar    k, r, j, B, base, ie, sd, rob
+>     real colvector e, srt
+>     k = cols(names)
+>     B = rows(TT)
+>     for (r = 1; r <= nref; r++) {
+>         base = (r - 1) * (3*k + 2)
+>         printf("\n  reference: %s -- u* %6.4f (segment %g)\n", rlab[r], E0[ba
+> se + 3*k + 1], E0[base + 3*k + 2])
+>         printf("  coefficient     point   SE_kern     SE_HK   SD_boot  robust
+>  SD  kern/SD    HK/SD   HK/rob\n")
+>         for (j = 1; j <= k; j++) {
+>             ie  = base + j
+>             e   = TT[., ie]
+>             sd  = sqrt(variance(e))
+>             srt = sort(e, 1)
+>             rob = (srt[ceil(0.75*B)] - srt[ceil(0.25*B)]) / 1.349
+>             printf("  %-12s %8.4f  %8.4f  %8.4f  %8.4f   %8.4f   %6.3f   %6.3
+> f   %6.3f\n",
+>                    names[j], E0[ie], E0[ie + k], E0[ie + 2*k], sd, rob,
+>                    E0[ie + k] / sd, E0[ie + 2*k] / sd, E0[ie + 2*k] / rob)
+>         }
+>     }
+> }
+
+: end
+-------------------------------------------------------------------------------
+
+. 
+. * the point of E with both SEs -> _Eres; _CHK holds check (1)
+. capture program drop _E_point2
+
+. program define _E_point2
+  1.     quietly {
+  2.         local k  : word count $XV
+  3.         local ng : word count $UG
+  4.         matrix _Gr  = J(`ng', `k' + 1, .)
+  5.         matrix _KB  = J(`ng', 1, .)
+  6.         matrix _CHK = J(`ng' + 1, 2, .)
+  7.         tempname VK VF
+  8.         local g 0
+  9.         foreach u of global UG {
+ 10.             local ++g
+ 11.             qreg $Y $XV, quantile(`u') vce(robust, kernel)
+ 12.             matrix `VK' = e(V)
+ 13.             local kb = e(kbwidth)
+ 14.             matrix _KB[`g', 1] = `kb'
+ 15.             capture drop _r`g' _k`g' _f`g'
+ 16.             predict double _r`g', residuals
+ 17.             generate double _k`g' = 0.75*(1 - 0.2*(_r`g'/`kb')^2)/sqrt(5) 
+> * (abs(_r`g'/`kb') < sqrt(5))
+ 18.             qreg $Y $XV, quantile(`u') vce(robust)
+ 19.             matrix `VF' = e(V)
+ 20.             local j 0
+ 21.             foreach v of global XV {
+ 22.                 local ++j
+ 23.                 matrix _Gr[`g', `j'] = _b[`v']
+ 24.             }
+ 25.             matrix _Gr[`g', `k' + 1] = _b[_cons]
+ 26.             local h = e(bwidth)
+ 27.             * qreg's fitted method (VCE_fitted in qreg.ado)
+.             _qreg $Y $XV, quant(`=`u' - `h'')
+ 28.             predict double _xl, xb
+ 29.             _qreg $Y $XV, quant(`=`u' + `h'')
+ 30.             predict double _xu, xb
+ 31.             generate double _f`g' = cond(_xu - _xl > sqrt(c(epsdouble)), 2
+> *`h'/(_xu - _xl), 0)
+ 32.             drop _xl _xu
+ 33.             mata: _chk(`g', `u', "`VK'", "`VF'", `kb', "_r`g'", "_k`g'", "
+> _f`g'", "$XV")
+ 34.         }
+ 35.         local g = `ng' + 1
+ 36.         qreg $Y, quantile($TAU) vce(robust, kernel)
+ 37.         matrix `VK' = e(V)
+ 38.         local qh  = _b[_cons]
+ 39.         local qkb = e(kbwidth)
+ 40.         capture drop _rq _kq _fq
+ 41.         generate double _rq = $Y - `qh'
+ 42.         generate double _kq = 0.75*(1 - 0.2*(_rq/`qkb')^2)/sqrt(5) * (abs(
+> _rq/`qkb') < sqrt(5))
+ 43.         qreg $Y, quantile($TAU) vce(robust)
+ 44.         matrix `VF' = e(V)
+ 45.         local hq = e(bwidth)
+ 46.         _qreg $Y, quant(`=$TAU - `hq'')
+ 47.         local ql = _b[_cons]
+ 48.         _qreg $Y, quant(`=$TAU + `hq'')
+ 49.         local qu = _b[_cons]
+ 50.         generate double _fq = cond(`qu' - `ql' > sqrt(c(epsdouble)), 2*`hq
+> '/(`qu' - `ql'), 0)
+ 51.         mata: _chk(`g', $TAU, "`VK'", "`VF'", `qkb', "_rq", "_kq", "_fq", 
+> "")
+ 52.         mata: _ref_$REFTYPE()
+ 53.         mata: _E_run2(`qh', `qkb')
+ 54.     }
+ 55. end
+
+. 
+. capture program drop _dgp
+
+. program define _dgp
+  1.     args nobs s1 s2
+  2.     quietly {
+  3.         set obs `nobs'
+  4.         generate double x1 = 1 + 8*runiform()
+  5.         generate double x2 = runiform() < invlogit(-1 + 0.1*x1)
+  6.         generate double u  = runiform()
+  7.         generate double y  = invnormal(u) + (0.4 + `s1'*u)*x1 + (0.5 + `s2
+> '*u)*x2
+  8.         drop u
+  9.     }
+ 10. end
+
+. 
+. capture program drop _bkf_data
+
+. program define _bkf_data
+  1.     use bkf98I, clear
+  2.     quietly {
+  3.         generate double lexp = ln(exppc)
+  4.         generate byte male  = (sex == 1)
+  5.         generate byte urban = (zone == 2)
+  6.         forvalues l = 2/7 {
+  7.             generate byte g`l' = (gse == `l')
+  8.         }
+  9.         keep lexp size male urban gse g2-g7
+ 10.         keep if !missing(lexp, size, male, urban, gse)
+ 11.     }
+ 12. end
+
+. 
+. if "`what'" == "dgp" {
+.     global Y y
+.     global XV x1 x2
+.     global XFIX 5 1
+.     global REFTYPE dgp
+.     set seed 1
+.     _dgp 2000 2 3
+.     _E_point2
+.     matrix E0 = _Eres
+.     mata: C = st_matrix("_CHK"); printf("\n(1) Stata forms against e(V), larg
+> est relative SE gap over 19 grid points and q: kernel %9.2e, fitted %9.2e\n",
+>  max(C[., 1]), max(C[., 2]))
+.     di as text "(2) p13a's point (printed by p13a above): default (0.8016, 1.
+> 5653), fixed (0.6198, 1.1077)"
+.     mata: E0 = st_matrix("E0"); printf("    p13b's point: default (%6.4f, %6.
+> 4f), fixed (%6.4f, %6.4f)\n", E0[1], E0[2], E0[9], E0[10])
+.     use "`OUT'/p13_dgp_draws.dta", clear
+.     mkmat c*, matrix(TT)
+.     di as text _n "(3) perfect case, n = 2000, tau = `tau', the 200 draws of 
+> p13a"
+.     mata: _report4(st_matrix("E0"), st_matrix("TT"), ("x1", "x2"), 2, ("defau
+> lt type (x1 mean, x2 mode)", "fixed type (5, 1)"))
+.     exit
+. }
+
+. if "`what'" == "bkf" {
+.     global Y lexp
+.     global XV size male urban g2 g3 g4 g5 g6 g7
+.     global XFIX
+.     global REFTYPE bkf
+.     _bkf_data
+.     _E_point2
+.     matrix E0 = _Eres
+.     mata: C = st_matrix("_CHK"); printf("\n(1) Stata forms against e(V), larg
+> est relative SE gap over 19 grid points and q: kernel %9.2e, fitted %9.2e\n",
+>  max(C[., 1]), max(C[., 2]))
+
+(1) Stata forms against e(V), largest relative SE gap over 19 grid points and q
+> : kernel  9.26e-14, fitted  5.82e-13
+.     preserve
+.     use "`OUT'/p13_bkf_point.dta", clear
+.     mkmat c*, matrix(E3P)
+.     restore
+.     mata: a = st_matrix("E0"); b = st_matrix("E3P"); printf("(2) point E agai
+> nst p13a's, largest gap over the 9 coefficients: %9.2e\n", max(abs(a[1..9] - 
+> b[1..9])))
+(2) point E against p13a's, largest gap over the 9 coefficients:  0.00e+00
+.     use "`OUT'/p13_bkf_draws_c1.dta", clear
+.     append using "`OUT'/p13_bkf_draws_c2.dta"
+.     append using "`OUT'/p13_bkf_draws_c3.dta"
+.     mkmat c*, matrix(TT)
+.     di as text _n "(3) Burkina, unweighted, n = 8478, tau = `tau', the 200 dr
+> aws of p13a"
+
+(3) Burkina, unweighted, n = 8478, tau = 0.25, the 200 draws of p13a
+.     mata: _report4(st_matrix("E0"), st_matrix("TT"), ("size", "male", "urban"
+> , "2.gse", "3.gse", "4.gse", "5.gse", "6.gse", "7.gse"), 1, ("default type (s
+> ize mean; male, urban, gse at their mode)"))
+
+  reference: default type (size mean; male, urban, gse at their mode) -- u* 0.3
+> 198 (segment 6)
+  coefficient     point   SE_kern     SE_HK   SD_boot  robust SD  kern/SD    HK
+> /SD   HK/rob
+  size          -0.0436    0.0021    0.0014    0.0023     0.0023    0.905    0.
+> 594    0.603
+  male           0.0002    0.0335    0.0312    0.0346     0.0375    0.969    0.
+> 902    0.832
+  urban          0.2683    0.0263    0.0262    0.0231     0.0228    1.140    1.
+> 134    1.151
+  2.gse         -0.5791    0.0562    0.0614    0.0560     0.0521    1.004    1.
+> 097    1.179
+  3.gse         -0.6483    0.0468    0.0475    0.0507     0.0462    0.922    0.
+> 937    1.028
+  4.gse         -0.5965    0.0768    0.0540    0.0633     0.0605    1.214    0.
+> 854    0.894
+  5.gse         -0.8907    0.0471    0.0482    0.0489     0.0501    0.963    0.
+> 987    0.963
+  6.gse         -1.0804    0.0421    0.0432    0.0440     0.0434    0.956    0.
+> 983    0.995
+  7.gse         -0.9290    0.0524    0.0502    0.0533     0.0523    0.984    0.
+> 942    0.959
+.     exit
+
+end of do-file
+
+. log close _p13
+      name:  _p13
+       log:  C:\Users\aabd\AppData\Local\Temp\claude\C--dev-aura\a5dddb67-b624-
+> 4b3e-80fc-fa46263e876d\scratchpad\gp\rep_check\results/p13_profile_delta.log
+  log type:  text
+ closed on:   5 Oct 2026, 12:44:15
+-------------------------------------------------------------------------------
