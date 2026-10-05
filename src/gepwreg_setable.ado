@@ -1,4 +1,4 @@
-*! gepwreg_setable.ado  1.5.0  05oct2026 (in development; the program is that of 1.4)  Araar A.
+*! gepwreg_setable.ado  1.5.0  05oct2026 (the program is that of 1.4)  Araar A.
 *! Corrected 04oct2026: the version number of the package, 1.4 (it said
 *! 1.5.0, a development number).
 *! Post-estimation command of gepwreg: the consistent standard errors

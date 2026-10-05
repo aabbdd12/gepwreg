@@ -1,7 +1,7 @@
 /*
-	gepwreg.dlg  1.5.0  05oct2026 (in development)  A. Araar (Universite Laval / PEP)
+	gepwreg.dlg  1.5.0  05oct2026  A. Araar (Universite Laval / PEP)
 	Corrected 04oct2026: no fweight button (gepwreg refuses fweights).
-	1.5.0 (in development, 05oct2026): graph() on the Reporting tab, with
+	1.5.0 (05oct2026): graph() on the Reporting tab, with
 	its keywords uniform and ref; the reference household, ref().
 
 	Dialog for -gepwreg-: the effect of the covariates on the units located

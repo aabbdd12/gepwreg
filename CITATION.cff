@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use this software, please cite the paper below (preferred-citation)."
 type: software
 title: "gepwreg: Percentile Weights Regression for Stata"
-version: 1.4
-date-released: 2026-09-19
+version: 1.5.0
+date-released: 2026-10-05
 license: MIT
 repository-code: "https://github.com/aabbdd12/gepwreg"
 authors:

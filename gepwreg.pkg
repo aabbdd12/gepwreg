@@ -5,14 +5,14 @@ d Author: Abdelkrim Araar
 d Universite Laval and Partnership for Economic Policy (PEP)
 d Support: aabd@ecn.ulaval.ca
 d
-d Distribution-Date: 20260919
+d Distribution-Date: 20261005
 d
 d Description:
 d gepwreg estimates the effect of the covariates on an outcome for the
 d units located at a target quantile of the outcome, at the initial
 d quantile (the outcome before the contribution of the covariates), or
 d along the rank of an observed covariate, with the percentile weights of
-d Araar (2016).  Version 1.4 estimates the effect at a quantile of the
+d Araar (2016).  Version 1.5.0 estimates the effect at a quantile of the
 d outcome by a two-step estimator (unit-level effects from a heterogeneity
 d model -- conditional quantile regression, or interactions with observed
 d variables -- averaged with the percentile weights), with analytical
@@ -27,8 +27,13 @@ d With het(varlist), merr corrects step 1 for classical measurement error
 d in the heterogeneity variables: one error variance per variable,
 d identified from the third moments of the step-1 residual, applied only
 d where it is identified and where the data support it.
+d Version 1.5.0 adds the effect for a given household, ref(), which holds
+d the composition of the group at the quantile fixed, and the profile of
+d the effects across percentiles, graph(), with a simultaneous band and a
+d test that the effect is constant across percentiles.
 d gepwreg_setable, a post-estimation command, compares the standard
-d errors; a dialog box is included.
+d errors; a dialog box is included; the examples of the help run from their
+d links (gepwreg_examples).
 d
 d bkf98I.dta, retrieved by net get, is the Burkina Faso 1998 household
 d survey extract used in the paper and in the help file examples.

@@ -1,4 +1,4 @@
-*! gepwreg.ado  v1.5.0  05oct2026 (in development)  Araar A.
+*! gepwreg.ado  v1.5.0  05oct2026  Araar A.
 *! 1.4 (September 2026).  One release since 1.3; the numbers in between were
 *! development states that were never distributed.
 *! Corrected 04oct2026, results unchanged: every Mata function and structure
@@ -10,7 +10,7 @@
 *! under a survey design is labelled as what it is, PSUs within strata;
 *! an fpc() declared by svyset is said to be ignored, and a stratum with a
 *! single PSU to be left out of the Taylor variance.
-*! 1.5.0 (in development).  Review C8: a BINARY regressor that is also a
+*! 1.5.0.  Review C8: a BINARY regressor that is also a
 *! heterogeneity variable gets the 1-vs-0 difference as its household effect.
 *! The derivative 2 d x of the term d x^2 is not identified when x^2 = x (the
 *! coefficients of x, z and x z are then a generalized-inverse choice); the

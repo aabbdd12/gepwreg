@@ -1,4 +1,4 @@
-*! gepwreg_examples 1.5.0  05oct2026 (in development)  A. Araar (Universite Laval / PEP)
+*! gepwreg_examples 1.5.0  05oct2026  A. Araar (Universite Laval / PEP)
 *! The examples of help gepwreg, run from their links.
 *!   gepwreg_examples #          run example # in the command window
 *!   gepwreg_examples #, db      open the dialog box of gepwreg filled in for example #
@@ -14,7 +14,7 @@
 *! "ssc install gepwreg, all" or "net get gepwreg" copies it, possibly as
 *! bkf98i.dta), else from the SSC archive, else from GitHub (_gepwreg_exload);
 *! nothing is written.  Example 7 simulates its data (set seed 20260919).
-*! 1.5.0 (in development, 05oct2026): example 8, the profile in a figure
+*! 1.5.0 (05oct2026): example 8, the profile in a figure
 *! against the mean household (het(z), ref(mean), graph() with the reference
 *! curve and the simultaneous band); example 9, the profile for a given
 *! household under het(qr) with the bootstrap of the whole profile; db(k),

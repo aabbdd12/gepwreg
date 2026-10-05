@@ -1,9 +1,9 @@
 {smcl}
-{* *! gepwreg.sthlp  v1.5.0  05oct2026 (in development)  Araar A.}{...}
+{* *! gepwreg.sthlp  v1.5.0  05oct2026  Araar A.}{...}
 {* Corrected 04oct2026: the version of the package under the title and in Author; fweights refused;}{...}
 {* the bootstrap under a design, fpc() and single-PSU strata; e(vce), e(initial), e(ranklabel), e(title).}{...}
 {* Corrected 05oct2026: the examples run from their links (gepwreg_examples); het(qr) example with boot(50).}{...}
-{* 1.5.0 (in development, 05oct2026): option graph(), example 8; review C8 (a binary regressor also in het(): the 1-vs-0 difference).}{...}
+{* 1.5.0 (05oct2026): options graph() and ref(), example 8; review C8 (a binary regressor also in het(): the 1-vs-0 difference).}{...}
 {vieweralsosee "qreg" "help qreg"}{...}
 {vieweralsosee "rifhdreg" "help rifhdreg"}{...}
 {vieweralsosee "gepwe" "help gepwe"}{...}
@@ -26,7 +26,7 @@ covariate, or at the initial quantile, with analytical standard errors and
 survey-design inference
 
 {pstd}
-Package {cmd:gepwreg}, version 1.5.0 (in development) | Stata 16 or later{p_end}
+Package {cmd:gepwreg}, version 1.5.0 (05/10/2026) | Stata 16 or later{p_end}
 
 {hline}
 {marker syntax}{...}
@@ -126,7 +126,7 @@ the replication of the comparisons of the paper.
 {cmd:gepwreg} estimates how the effect of the covariates on an outcome varies
 along a distribution, with the percentile weights of Araar (2016): Gaussian
 kernel weights on the percentile scale, centred at a target percentile
-{it:tau}.  Version 1.4 estimates three objects:
+{it:tau}.  Version 1.5.0 estimates three objects:
 
 {phang2}
 (a) the {bf:effect at the {it:tau}-quantile of the outcome}: the mean effect
@@ -167,6 +167,15 @@ sign can follow the heteroskedasticity of the error rather than the
 effect.  It remains available with {opt rankdep}, labelled as a descriptive
 slope.  The derivation, the simulations and the Burkina Faso application
 are in Araar (2026, version 3).
+
+{pstd}
+{bf:What changed in 1.5.0.}  The group at {it:tau} is defined by the outcome,
+so the profile of object (a) across percentiles mixes the composition of
+the group with the heterogeneity of the effect.  {opt ref()} gives the
+effect for a given household, which holds the composition fixed, and
+{opt graph()} draws the profile with a simultaneous band and a test that the
+effect is constant across the percentiles; see
+{help gepwreg##history:Version history} and Araar (2026, version 5).
 
 {hline}
 {marker methods}{...}
@@ -777,7 +786,9 @@ bandwidth deterministic and restore the analytical variance exactly.
 {synopt:{cmd:e(prof_cu)}}the critical value of the simultaneous band, per coefficient{p_end}
 {synopt:{cmd:e(prof_flat)}}the flatness test, per coefficient: statistic (row 1) and p-value (row 2){p_end}
 {synopt:{cmd:e(prof_rb)}, {cmd:e(prof_rse)}, {cmd:e(prof_rcu)}, {cmd:e(prof_rflat)}}the same for the reference household{p_end}
-{synopt:{cmd:e(prof_ru)}}{opt het(qr)} with {opt ref()}: the conditional rank {it:u}* of the reference household at every percentile of {cmd:e(prof_grid)}, and {cmd:clip}: 1 where its curve is held at the last quantile of the grid, -1 at the first, 0 inside{p_end}
+{synopt:{cmd:e(prof_ru)}}{opt het(qr)} with {opt ref()}: the conditional rank {it:u}* of the reference household
+at every percentile of {cmd:e(prof_grid)}, and {cmd:clip}: 1 where its curve is held at the last quantile of the
+grid, -1 at the first, 0 inside{p_end}
 {synopt:{cmd:e(merr_diag)}}implied reliability, skewness of {it:z~} and R2 of {it:z~} on the regressors, one row per {opt het()} variable ({opt merr}){p_end}
 
 {p2col 5 20 24 2: Macros}{p_end}
@@ -912,7 +923,9 @@ symmetric and independent of it.  Both are observed with error.{p_end}
 {phang2}{cmd:. gepwreg y x, het(zt1 zt2) per(0.75) merr}{p_end}
 {phang2}{cmd:. gepwreg y x, het(zt1 c.zt1#c.zt1 zt2) per(0.75)}{p_end}
 {p 8 8 2}{txt}({stata "gepwreg_examples 7":example 7: click to run in command window}){p_end}
-{p 8 8 2}{txt}(click to run in dialog box: {stata "gepwreg_examples 7, db(1)":oracle} | {stata "gepwreg_examples 7, db(2)":proxies} | {stata "gepwreg_examples 7, db(3)":merr} | {stata "gepwreg_examples 7, db(4)":enriched, without merr}){p_end}
+{p 8 8 2}{txt}(click to run in dialog box: {stata "gepwreg_examples 7, db(1)":oracle} |
+{stata "gepwreg_examples 7, db(2)":proxies} | {stata "gepwreg_examples 7, db(3)":merr} |
+{stata "gepwreg_examples 7, db(4)":enriched, without merr}){p_end}
 {p 8 8 2}{txt}({stata "gepwreg_examples 7, do":open as a do-file}){p_end}
 
 {pstd}
@@ -1082,11 +1095,71 @@ Silverman, B. W. (1986).
 Chapman & Hall, London.
 
 {hline}
+{marker history}{...}
 {title:Version history}
 
+{pstd}
+Each version is installed from its own place on GitHub
+({browse "https://github.com/aabbdd12/gepwreg"}), with
+{cmd:net install gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/}{it:place}{cmd:")};
+{cmd:net get} with the same address brings the example data.{p_end}
+
 {phang}
-1.4 (September 2026).  One release since 1.3; the version numbers in between
-were development states and were never distributed.
+1.5.0 (October 2026): {it:place} {cmd:main}, the current version, also
+frozen as the branch {cmd:v15} with version 5 of the paper and its
+replication.
+
+{pmore}
+{ul:The effect for a given household.}  The profile of the effect across
+{it:tau} mixes the composition of the group at {it:tau} with the
+heterogeneity of the effect.  {opt ref(default | mean | var=# ...)} reports
+the effect for a reference household, which holds the composition fixed:
+a real type by default, the mean household, or values given.  Under
+{opt het(varlist)} its effect does not depend on {it:tau}, so the whole
+profile is composition, and it has the exact influence function; under
+{opt het(qr)} it is the slope of the conditional quantile regression at the
+conditional rank at which the household reaches {it:q_tau}
+({cmd:e(u_ref)}), with the bootstrap, or a delta-method standard error
+reported with a warning.  {cmd:e(b_ref)}, {cmd:e(V_ref)}, {cmd:e(ref_x)}.
+
+{pmore}
+{ul:The profile across percentiles.}  {opt graph()} draws the profile of the
+named coefficients, computed inside one estimation: under
+{opt het(varlist)} the joint influence function of the whole profile
+(Taylor under a design), under {opt het(qr)} one loop of bootstrap draws for
+every percentile, each draw re-estimating the whole procedure.  Keywords
+{opt uniform} (the simultaneous band) and {opt ref} (the reference
+household's curve, with a note where it is held at an end of the quantile
+grid); under each panel, the test that the effect is constant across the
+percentiles.  {cmd:e(profile)}, {cmd:e(prof_*)}.
+
+{pmore}
+{ul:Corrections.}  A binary regressor that is also a heterogeneity variable
+gets the 1-vs-0 difference of its effect, not the derivative of x^2 = x,
+which the data do not identify; only that configuration changes.
+{opt merr} refuses a function of the heterogeneity variables (an interaction
+or a power written with {cmd:#}), in the command and in the dialog box.
+Frequency weights are refused (they were treated as sampling weights); the
+bootstrap under a design is labelled as such; notes on {opt fpc()} and on
+strata with a single PSU; new {cmd:e(vce)}, {cmd:e(initial)},
+{cmd:e(ranklabel)}, {cmd:e(title)}.
+
+{pmore}
+{ul:Speed.}  The quantile regressions of {opt het(qr)} run on qreg's own
+solver path without the variance that gepwreg does not use: the same
+coefficients, about four times faster.
+
+{pmore}
+{ul:Help and dialog box.}  Every example runs from its links -- in the
+command window, in the dialog box filled in (one link per estimation), or as
+a do-file ({cmd:gepwreg_examples}); examples 8 and 9 draw the profile against
+the mean household and for a given household.  The dialog box offers
+{opt ref()} and the keywords of {opt graph()}.
+
+{phang}
+1.4 (September 2026): {it:place} {cmd:v14}, with the previous versions of the
+paper and their replication.  One release since 1.3; the version numbers in
+between were development states and were never distributed.
 
 {pmore}
 {ul:The estimator.}  The effect at the {it:tau}-quantile of the outcome is
@@ -1140,7 +1213,7 @@ rewritten dialog box covering every option.  Progress dots on every bootstrap
 path, with {opt nodots}.  Execution time in the header and in {cmd:e(etime)}.
 
 {phang}
-1.3 (June 2026).  MSE-optimal bandwidth as the default, Taylor linearisation
+1.3 (June 2026): {it:place} {cmd:v13}.  MSE-optimal bandwidth as the default, Taylor linearisation
 under {cmd:svyset}, ties in the ranking variable given the same rank,
 {cmd:rankvar()}.
 
@@ -1152,7 +1225,7 @@ Abdelkrim Araar{break}
 Universite Laval and Partnership for Economic Policy (PEP), Quebec, Canada{break}
 {browse "mailto:aabd@ecn.ulaval.ca":aabd@ecn.ulaval.ca}{break}
 Package: {browse "https://github.com/aabbdd12/gepwreg"}{break}
-Version 1.5.0 (in development)
+Version 1.5.0 (October 2026)
 
 {hline}
 {title:Also see}

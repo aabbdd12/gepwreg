@@ -3,7 +3,7 @@
 `gepwreg` estimates how the effect of the covariates on an outcome varies
 along a distribution, with the **percentile weights** of Araar (2016):
 Gaussian kernel weights on the percentile scale, centred at a target
-percentile. Version 1.4 estimates three objects:
+percentile. Version 1.5.0 estimates three objects:
 
 * the **effect at the τ-quantile of the outcome** — the mean effect of the
   covariates among the households whose outcome is at that quantile (the
@@ -24,6 +24,60 @@ composition of the group — and an analytical variance by linearisation
 that accounts for step 1, for the composition and for the estimated ranks;
 Taylor linearisation applies under a complex survey design declared by
 `svyset`; a bootstrap re-runs the whole procedure.
+
+The group at the τ-quantile is defined by the outcome, so the profile of the
+effect across quantiles mixes who is at each quantile with how the effect
+varies. Version 1.5.0 separates the two: `ref()` gives the effect for a given
+household, which holds the composition of the group fixed, and `graph()`
+draws the profile with a simultaneous confidence band and a test that the
+effect is constant across quantiles.
+
+## What changed in 1.5.0
+
+The current version, on `main`; also frozen as the branch `v15` with version 5
+of the paper and its replication.
+
+### The effect for a given household
+
+`ref(default | mean | var=# ...)` reports, besides the effect for the
+households at τ, the effect for a reference household: a real type by
+default (continuous variables at their mean, a binary one at its most
+frequent value, a factor at its most frequent level), the mean household
+(`ref(mean)`), or values given. Under `het(varlist)` the effect of a given
+household does not depend on τ — the whole profile is composition — and the
+reference has the exact influence function; under `het(qr)` it is the slope
+of the conditional quantile regression at the conditional rank at which the
+household reaches the τ-quantile (`e(u_ref)`), with the bootstrap, or a
+delta-method standard error reported with a warning.
+
+### The profile across percentiles
+
+`graph(coefs [, numlist ref uniform])` draws the profile of the named
+coefficients, computed inside one estimation: under `het(varlist)` the joint
+influence function of the whole profile (Taylor under a design), under
+`het(qr)` one loop of bootstrap draws for every percentile, each draw
+re-estimating the whole procedure. `uniform` adds the simultaneous (sup-t)
+band, `ref` the curve of the reference household; under each panel, the test
+that the effect is constant across the percentiles. The profile is stored in
+`e(profile)` and `e(prof_*)`.
+
+### Corrections
+
+A binary regressor that is also a heterogeneity variable gets the 1-vs-0
+difference of its effect, not the derivative of x² = x, which the data do not
+identify; only that configuration changes. `merr` refuses a function of the
+heterogeneity variables (an interaction or a power written with `#`), in the
+command and in the dialog box. Frequency weights are refused (they were
+treated as sampling weights); the bootstrap under a design is labelled as
+such; notes on `fpc()` and on strata with a single PSU.
+
+### Also
+
+The quantile regressions of `het(qr)` run on qreg's own solver path without
+the variance gepwreg does not use: the same coefficients, about four times
+faster. Every example of the help runs from its links — in the command
+window, in the dialog box filled in, or as a do-file (`gepwreg_examples`);
+the dialog box offers `ref()` and the keywords of `graph()`.
 
 ## What changed in 1.4
 
@@ -138,34 +192,51 @@ time in the header and in `e(etime)`.
 
 ## Installation
 
-### Version 1.4 (September 2026) — current
+| version | where | what it is |
+|---|---|---|
+| **1.5.0** (October 2026) | `main` | the current version |
+| 1.5.0 | branch `v15` | the same files, frozen with version 5 of the paper and its replication |
+| 1.4 (September 2026) | branch `v14` | frozen with the previous versions of the paper and their replication |
+| 1.3 (June 2026) | tag `v13` | to reproduce earlier results |
 
-```stata
-net install gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/v14") replace
-net get     gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/v14") replace
-```
-
-### Version 1.3 (June 2026) — to reproduce earlier results
+### Version 1.5.0 — current
 
 ```stata
 net install gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/main") replace
 net get     gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/main") replace
 ```
 
-In both cases the second line retrieves `bkf98I.dta`, the Burkina Faso 1998
+### Version 1.4
+
+```stata
+net install gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/v14") replace
+net get     gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/v14") replace
+```
+
+### Version 1.3 — to reproduce earlier results
+
+```stata
+net install gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/v13") replace
+net get     gepwreg, from("https://raw.githubusercontent.com/aabbdd12/gepwreg/v13") replace
+```
+
+In every case the second line retrieves `bkf98I.dta`, the Burkina Faso 1998
 household survey extract used in the paper and in the help file. Stata 16 or
 later; no dependencies.
 
-`replace` overwrites whichever version is installed, so those are also the two
+`replace` overwrites whichever version is installed, so those are also the
 lines to switch between them. `which gepwreg` says which one you have: the
-header of 1.4 is dated September 2026, that of 1.3 June 2026.
+header of 1.5.0 is dated October 2026, that of 1.4 September 2026, that of
+1.3 June 2026.
 
 Results obtained with 1.3 on the rank of the outcome should be re-estimated —
 see *What changed in 1.4* above. Results obtained with `rankvar()` are
-unaffected.
+unaffected. Version 1.5.0 changes no result of 1.4 except for a binary
+regressor that is also a heterogeneity variable.
 
-The `replication/` folder of the `v14` branch holds the programmes that
-produce every number of the paper, with their own README.
+The `replication/` folder of the `v15` branch holds the programmes that
+produce every number of version 5 of the paper, with their own README; that
+of the `v14` branch, those of its previous versions.
 
 ## Quick start
 
@@ -183,22 +254,28 @@ gepwreg lexp size male i.gse, per(0.25) het(urban size)               // Taylor 
 gepwreg lexp urban size male i.gse, per(0.25) het(size) initial(urban)             // effect for the initially poor
 gepwreg lexp male urban i.gse, per(0.25) rankvar(size)                // profile along household size
 gepwreg_setable                                                       // the standard errors side by side
+
+* 1.5.0: the profile across percentiles, against the mean household (het(z)) and for a given household (het(qr))
+gepwreg lexp size male urban i.gse, per(0.25) het(urban size) ref(mean) graph(size male 5.gse urban, ref uniform)
+gepwreg lexp size male urban i.gse, per(0.25) ref(default) boot(50) graph(size male 5.gse urban, ref uniform)
 ```
 
 `help gepwreg` documents the objects, the estimators, the options, the
-standard errors and the stored results.
+standard errors and the stored results; its examples run from their links,
+or with `gepwreg_examples #`.
 
 ## Documentation
 
-One paper per version, and they are different papers.
-
-**Version 1.4**, the `v14` branch:
+**Versions 1.5.0 and 1.4** (`main`, `v15`, `v14`): one Zenodo record, whose
+version 5 documents 1.5.0 — the effect for a given household and the profile
+across quantiles are its Section 7 and Section 9.6 — and whose earlier
+versions document 1.4:
 
 Araar, A. (2026). *Effects at a quantile of the outcome: a two-step
 percentile-weights estimator, with analytical and survey-design inference*.
 Zenodo. [10.5281/zenodo.22845707](https://doi.org/10.5281/zenodo.22845707)
 
-**Version 1.3**, the `main` branch:
+**Version 1.3**, the tag `v13`, a different paper:
 
 Araar, A. (2026). *Exploring Heterogeneous Effects: Quantile Models and
 Percentile Weights Regression*. Zenodo.
@@ -212,7 +289,7 @@ regression*, PEP technical note, and Araar (2023), PEP Working Paper 2023-15.
 
 ## Citing
 
-For version 1.4:
+For versions 1.5.0 and 1.4:
 
 ```
 Araar, A. (2026). Effects at a quantile of the outcome: a two-step
