@@ -1,0 +1,546 @@
+/*
+	gepwreg.dlg  1.5.0  05oct2026  A. Araar (Universite Laval / PEP)
+	Corrected 04oct2026: no fweight button (gepwreg refuses fweights).
+	1.5.0 (05oct2026): graph() on the Reporting tab, with
+	its keywords uniform and ref; the reference household, ref().
+
+	Dialog for -gepwreg-: the effect of the covariates on the units located
+	at a quantile of the outcome, of the initial quantile, or of the rank of
+	an observed covariate.
+
+	Self-contained on purpose.  Only the three includes that every Stata
+	installation carries are used (_std_large, header, _sp_level), and
+	_sp_level is given the _x / _y / _cx macros it positions its spinner
+	with.  A dialog that borrows a tab from an official dialog breaks the
+	day that dialog changes.
+
+	1.4: the file is rewritten.  The one it replaces predates the two-step
+	estimator: it offered percentile(), rankvar(), the bandwidth, level()
+	and noconstant, and nothing else -- no het(), no initial(), no qgrid,
+	no rankdep, no setable.
+
+	The four estimators are one RADIO group.  They are mutually exclusive in
+	gepwreg.ado -- het() refuses to be combined with rankdep or rankvar() --
+	and the old file let the user fill the ranking-variable box while the
+	heterogeneity model stayed at its default, which is exactly the
+	combination the command rejects.  A group of four radios cannot produce
+	it.  Only the controls of the selected estimator are enabled; a disabled
+	control writes nothing to the command line, and -PROGRAM command- guards
+	them a second time, so an option can reach the command only when both
+	agree.
+
+	VARNAME and VARLIST carry no event -- the dialog language gives
+	onchange() to EDIT, SPINNER, EXP, FILE and COLOR and onclickon() /
+	onclickoff() to CHECKBOX and RADIO -- so a box being filled cannot by
+	itself change the state of the tab.  That is the second reason the
+	estimator is a radio group and not a set of boxes.
+
+	initial() and xref() sit on the Model tab because they describe the
+	estimand, not the heterogeneity model; het_ck disables them under
+	rankvar() and rankdep, which gepwreg.ado refuses.
+
+	merr is offered only under het(varlist).  It is refused with het(qr),
+	which carries no second-moment matrix to correct.  Nor can it take a
+	function of the heterogeneity variables (an interaction or a power,
+	c.z#c.z), which does not carry a classical error of its own: the box
+	het() has no event, so the check runs when merr is checked (me_ck
+	unchecks it and says why) and again at OK (-PROGRAM command- stops).
+
+	keyword:  eclass
+*/
+
+VERSION 16.0
+INCLUDE _std_large
+DEFINE _dlgwd  620
+DEFINE _iwd    600
+DEFINE _inwd   580
+DEFINE _vlx    320
+DEFINE _vlwd   290
+DEFINE _dlght  440
+INCLUDE header
+
+HELP hlp1, view("help gepwreg")
+RESET res1
+
+SCRIPT POSTINIT
+BEGIN
+	program me_ck
+	program het_ck
+	program wgt_ck
+	program bw_ck
+END
+
+
+/* -------------------------------------------------------------- Model -- */
+
+DIALOG main, title("gepwreg - Percentile weights regression")		///
+	tabtitle("Model")
+BEGIN
+  TEXT     tx_dv	_lft	_top	170	.,			///
+	label("Dependent variable")
+  DEFINE holdy @y
+  VARNAME  vn_dv	@	_ss	@	.,			///
+	numeric								///
+	label("Dependent variable")
+
+  TEXT     tx_iv	200	holdy	410	.,			///
+	label("Independent variables - i.sex and ib2.region are accepted")
+  VARLIST  vl_iv	@	_ss	@	.,			///
+	fv								///
+	numeric								///
+	label("Independent variables")
+
+  TEXT     tx_per	_lft	_ls	300	.,			///
+	label("Target percentile of the outcome, percentile():")
+  EDIT     ed_per	340	@	120	.,			///
+	numonly								///
+	option("percentile")						///
+	default(0.5)							///
+	label("percentile")
+  TEXT     tx_pern	_lft	_ss	_iwd	.,			///
+	label("strictly between 0 and 1; the default is 0.5, the median")
+
+  CHECKBOX ck_nc	_lft	_ls	_iwd	.,			///
+	option("noconstant")						///
+	label("Suppress the constant term")
+
+  GROUPBOX gb_in	_lft	_ls	_iwd	70,			///
+	label("Effect at the initial quantile (two-step estimators only)")
+  TEXT     tx_in	_ilft	_ss	300	.,			///
+	label("initial(): the variables removed, or _all")
+  EDIT     ed_in	340	@	240	.,			///
+	option("initial")						///
+	label("initial")
+  TEXT     tx_xr	_ilft	_ms	300	.,			///
+	label("xref(): their reference values, in order (default 0)")
+  EDIT     ed_xr	340	@	240	.,			///
+	option("xref")							///
+	label("xref")
+
+END
+
+
+/* ---------------------------------------------------------- Estimator -- */
+
+DIALOG het, tabtitle("Estimator")
+BEGIN
+  GROUPBOX gb_hm	_lft	_top	_iwd	180,			///
+	label("How the effect varies across units - the four are exclusive")
+  RADIO    rb_qr	_ilft	_ss	_inwd	., first		///
+	option("het(qr)")						///
+	onclickon(script het_sel)					///
+	label("Conditional quantile regression, het(qr)   [default]")
+  RADIO    rb_z		@	_ss	@	.,			///
+	onclickon(script het_sel)					///
+	label("Interactions with observed variables, het(varlist)")
+  RADIO    rb_rv	@	_ss	@	.,			///
+	onclickon(script het_sel)					///
+	label("Effect along the rank of an observed covariate, rankvar()")
+  RADIO    rb_rd	@	_ss	@	., last			///
+	option("rankdep")						///
+	onclickon(script het_sel)					///
+	label("One-step weighted regression, rankdep (descriptive only)")
+
+  TEXT     tx_hv	_ilft	_ms	300	.,			///
+	label("Heterogeneity variables, het():")
+  VARLIST  vl_hv	340	@	240	.,			///
+	fv								///
+	numeric								///
+	option("het")							///
+	label("Heterogeneity variables")
+
+  TEXT     tx_qg	_ilft	_ms	300	.,			///
+	label("Quantile grid for het(qr), qgrid():")
+  EDIT     ed_qg	340	@	240	.,			///
+	option("qgrid")							///
+	label("qgrid")
+
+  TEXT     tx_rv	_ilft	_ms	300	.,			///
+	label("Ranking covariate, rankvar():")
+  VARNAME  vn_rv	340	@	240	.,			///
+	numeric								///
+	option("rankvar")						///
+	label("rankvar")
+
+  GROUPBOX gb_me	_lft	+40	_iwd	70,			///
+	label("Measurement error in the heterogeneity variables")
+  CHECKBOX ck_me	_ilft	_ss	_inwd	.,			///
+	option("merr")							///
+	onclickon(program me_ck)					///
+	onclickoff(program me_ck)					///
+	label("Correct step 1 for classical measurement error, merr")
+  TEXT     tx_tc	_ilft	_ms	300	.,			///
+	label("Activation threshold on t = sigma2/se, tcrit():")
+  EDIT     ed_tc	340	@	120	.,			///
+	numonly								///
+	option("tcrit")							///
+	default(2)							///
+	label("tcrit")
+
+END
+
+SCRIPT het_sel
+BEGIN
+	program me_ck
+	program het_ck
+END
+
+/* me_ck runs before het_ck: it decides the threshold box from the state of
+   the checkbox, and het_ck then overrides it under the three estimators
+   that do not offer the correction.  One flat -if- per state, never
+   nested.                                                              */
+
+PROGRAM me_ck
+BEGIN
+	if het.ck_me & het.vl_hv.contains("#") {
+		call het.ck_me.setoff
+		stopbox note "merr is not available: het() contains an interaction or a power (#)." "merr corrects each het() variable for its own classical error," "which a product of them does not carry." "Fit this enriched model without merr: it is the check of merr."
+	}
+	if het.ck_me {
+		call het.tx_tc.enable
+		call het.ed_tc.enable
+	}
+	if !het.ck_me {
+		call het.tx_tc.disable
+		call het.ed_tc.disable
+	}
+END
+
+PROGRAM het_ck
+BEGIN
+	if het.rb_qr {
+		call het.tx_hv.disable
+		call het.vl_hv.disable
+		call het.tx_qg.enable
+		call het.ed_qg.enable
+		call het.tx_rv.disable
+		call het.vn_rv.disable
+		call het.ck_me.disable
+		call het.tx_tc.disable
+		call het.ed_tc.disable
+		call main.tx_in.enable
+		call main.ed_in.enable
+		call main.tx_xr.enable
+		call main.ed_xr.enable
+	}
+	if het.rb_z {
+		call het.tx_hv.enable
+		call het.vl_hv.enable
+		call het.tx_qg.disable
+		call het.ed_qg.disable
+		call het.tx_rv.disable
+		call het.vn_rv.disable
+		call het.ck_me.enable
+		call main.tx_in.enable
+		call main.ed_in.enable
+		call main.tx_xr.enable
+		call main.ed_xr.enable
+	}
+	if het.rb_rv {
+		call het.tx_hv.disable
+		call het.vl_hv.disable
+		call het.tx_qg.disable
+		call het.ed_qg.disable
+		call het.tx_rv.enable
+		call het.vn_rv.enable
+		call het.ck_me.disable
+		call het.tx_tc.disable
+		call het.ed_tc.disable
+		call main.tx_in.disable
+		call main.ed_in.disable
+		call main.tx_xr.disable
+		call main.ed_xr.disable
+	}
+	if het.rb_rd {
+		call het.tx_hv.disable
+		call het.vl_hv.disable
+		call het.tx_qg.disable
+		call het.ed_qg.disable
+		call het.tx_rv.disable
+		call het.vn_rv.disable
+		call het.ck_me.disable
+		call het.tx_tc.disable
+		call het.ed_tc.disable
+		call main.tx_in.disable
+		call main.ed_in.disable
+		call main.tx_xr.disable
+		call main.ed_xr.disable
+	}
+END
+
+
+/* ---------------------------------------------------------- Bandwidth -- */
+
+DIALOG bw, tabtitle("Bandwidth")
+BEGIN
+  GROUPBOX gb_bw	_lft	_top	_iwd	92,			///
+	label("Bandwidth of the percentile weights")
+  RADIO    rb_opt	_ilft	_ss	_inwd	., first		///
+	option("optbw")							///
+	onclickon(program bw_ck)					///
+	label("MSE-optimal plug-in bandwidth, optbw   [default]")
+  RADIO    rb_sil	@	_ss	@	.,			///
+	option("silverman")						///
+	onclickon(program bw_ck)					///
+	label("Silverman rule, silverman")
+  RADIO    rb_man	@	_ss	@	., last			///
+	onclickon(program bw_ck)					///
+	label("Fixed bandwidth, band()")
+
+  TEXT     tx_c0	_lft	_ls	300	.,			///
+	label("Constant of the Silverman rule or of its pilot, cband():")
+  EDIT     ed_c0	340	@	120	.,			///
+	numonly								///
+	option("cband")							///
+	default(0.9)							///
+	label("cband")
+
+  TEXT     tx_bv	_lft	_ms	300	.,			///
+	label("Fixed bandwidth, band() - strictly positive:")
+  EDIT     ed_bv	340	@	120	.,			///
+	numonly								///
+	option("band")							///
+	label("band")
+
+END
+
+PROGRAM bw_ck
+BEGIN
+	if bw.rb_opt {
+		call bw.tx_c0.enable
+		call bw.ed_c0.enable
+		call bw.tx_bv.disable
+		call bw.ed_bv.disable
+	}
+	if bw.rb_sil {
+		call bw.tx_c0.enable
+		call bw.ed_c0.enable
+		call bw.tx_bv.disable
+		call bw.ed_bv.disable
+	}
+	if bw.rb_man {
+		call bw.tx_c0.disable
+		call bw.ed_c0.disable
+		call bw.tx_bv.enable
+		call bw.ed_bv.enable
+	}
+END
+
+
+/* ------------------------------------------------------- Std. errors -- */
+
+DIALOG se, tabtitle("Std. errors")
+BEGIN
+  TEXT     tx_a1	_lft	_top	_iwd	.,			///
+	label("The standard errors follow the data, not an option:")
+  TEXT     tx_a2	_lft	_ss	_iwd	.,			///
+	label("   svyset declared  -  Taylor linearisation over strata and PSUs")
+  TEXT     tx_a3	_lft	_ss	_iwd	.,			///
+	label("   otherwise  -  analytical, from the influence function")
+
+  GROUPBOX gb_bt	_lft	_ls	_iwd	92,			///
+	label("Bootstrap - every resample re-runs the whole procedure")
+  TEXT     tx_bt	_ilft	_ss	300	.,			///
+	label("Replications, boot():")
+  EDIT     ed_bt	340	@	120	.,			///
+	numonly								///
+	option("boot")							///
+	default(0)							///
+	label("boot")
+  TEXT     tx_btn	_ilft	_ms	_inwd	.,			///
+	label("0 keeps the analytical s.e.  initial() always bootstraps: set the count here")
+  TEXT     tx_sd	_ilft	_ms	300	.,			///
+	label("Random-number seed, seed():")
+  EDIT     ed_sd	340	@	120	.,			///
+	numonly								///
+	option("seed")							///
+	default(12345)							///
+	label("seed")
+
+END
+
+
+/* ---------------------------------------------------------- Weights -- */
+
+DIALOG wgt, tabtitle("Weights")
+BEGIN
+  GROUPBOX gb_wgt	_lft	_top	_iwd	94,			///
+	label("Weight type")
+  RADIO    rb_wnone	_ilft	_ss	_inwd	., first		///
+	onclickon(program wgt_ck)					///
+	label("None here - the weights declared by svyset are used if present")
+  RADIO    rb_wpw	@	_ss	@	.,			///
+	onclickon(program wgt_ck)					///
+	label("Sampling weights (pweight)")
+  RADIO    rb_waw	@	_ss	@	., last			///
+	onclickon(program wgt_ck)					///
+	label("Analytic weights (aweight)")
+
+  TEXT     tx_wexp	_lft	_ls	200	.,			///
+	label("Weight variable or expression")
+  EDIT     ed_wexp	_vlx	@	_vlwd	.,			///
+	label("Weight expression")
+
+END
+
+PROGRAM wgt_ck
+BEGIN
+	if wgt.rb_wnone {
+		call wgt.tx_wexp.disable
+		call wgt.ed_wexp.disable
+	}
+	if !wgt.rb_wnone {
+		call wgt.tx_wexp.enable
+		call wgt.ed_wexp.enable
+	}
+END
+
+
+/* --------------------------------------------------------- Reporting -- */
+
+DIALOG rep, tabtitle("Reporting")
+BEGIN
+  DEFINE _x _lft
+  DEFINE _y _top
+  DEFINE _cx _spr
+  INCLUDE _sp_level
+
+  CHECKBOX ck_st	_lft	_ls	_iwd	.,			///
+	option("setable")						///
+	label("Show the standard errors side by side after the table, setable")
+
+  GROUPBOX gb_rf	_lft	_ls	_iwd	95,			///
+	label("Reference household, ref(): the effect at tau for one household")
+  RADIO    rb_rn	_ilft	_ss	100	., first		///
+	label("none")
+  RADIO    rb_rd	120	@	200	.,			///
+	label("real type (default)")
+  RADIO    rb_rm	330	@	200	., last			///
+	label("mean household (mean)")
+  TEXT     tx_rv	_ilft	_ms	300	.,			///
+	label("Values given, var=# (the others: as above):")
+  EDIT     ed_rv	340	@	240	.,			///
+	label("Values of the reference household")
+
+  GROUPBOX gb_gr	_lft	+45	_iwd	135,			///
+	label("Profile across percentiles, graph(): one panel per coefficient")
+  TEXT     tx_gv	_ilft	_ss	300	.,			///
+	label("Coefficients, as in e(b) (size 3.gse i.gse):")
+  EDIT     ed_gv	340	@	240	.,			///
+	label("Coefficients to draw")
+  TEXT     tx_gg	_ilft	_ms	300	.,			///
+	label("Percentiles (empty: 0.05(0.025)0.95):")
+  EDIT     ed_gg	340	@	240	.,			///
+	label("Percentiles of the profile")
+  CHECKBOX ck_gu	_ilft	_ms	260	.,			///
+	label("Simultaneous band (uniform)")
+  CHECKBOX ck_gr	300	@	280	.,			///
+	label("Curve of the reference household (ref)")
+  TEXT     tx_gn	_ilft	_ms	_inwd	.,			///
+	label("het(qr) needs boot(#) for the bands: one loop of draws for every percentile")
+
+END
+
+
+/* ----------------------------------------------------------- command -- */
+
+PROGRAM command
+BEGIN
+	put "gepwreg "
+	require main.vn_dv
+	varlist main.vn_dv [main.vl_iv]
+	if !wgt.rb_wnone {
+		require wgt.ed_wexp
+		put " ["
+		if wgt.rb_wpw {
+			put "pweight"
+		}
+		if wgt.rb_waw {
+			put "aweight"
+		}
+		put " = " wgt.ed_wexp "]"
+	}
+	if het.rb_z {
+		require het.vl_hv
+		if het.ck_me & het.vl_hv.contains("#") {
+			stopbox stop "merr cannot be combined with an interaction or a power in het() (#):" "merr corrects each het() variable for its own classical error," "which a product of them does not carry." "Uncheck merr to fit this enriched model: it is the check of merr."
+		}
+	}
+	if het.rb_rv {
+		require het.vn_rv
+	}
+	if bw.rb_man {
+		require bw.ed_bv
+	}
+	beginoptions
+		optionarg /hidedefault main.ed_per
+		/* One flat -if- per estimator.  The enable/disable state above
+		   already keeps the others off the command line; this repeats
+		   it, so an option reaches the command only when the control
+		   state and the guard agree.                               */
+		if het.rb_qr {
+			option het.rb_qr
+			optionarg het.ed_qg
+			optionarg main.ed_in
+			optionarg main.ed_xr
+		}
+		if het.rb_z {
+			optionarg het.vl_hv
+			option het.ck_me
+			optionarg /hidedefault het.ed_tc
+			optionarg main.ed_in
+			optionarg main.ed_xr
+		}
+		if het.rb_rv {
+			optionarg het.vn_rv
+		}
+		if het.rb_rd {
+			option het.rb_rd
+		}
+		option bw.rb_opt
+		option bw.rb_sil
+		if bw.rb_opt {
+			optionarg /hidedefault bw.ed_c0
+		}
+		if bw.rb_sil {
+			optionarg /hidedefault bw.ed_c0
+		}
+		if bw.rb_man {
+			optionarg bw.ed_bv
+		}
+		optionarg /hidedefault se.ed_bt
+		optionarg /hidedefault se.ed_sd
+		option main.ck_nc
+		option rep.ck_st
+		if rep.rb_rd | rep.rb_rm | rep.ed_rv {
+			put " ref("
+			if rep.rb_rd {
+				put "default"
+			}
+			if rep.rb_rm {
+				put "mean"
+			}
+			if rep.ed_rv {
+				put " " rep.ed_rv
+			}
+			put ")"
+		}
+		if rep.ed_gv {
+			put " graph(" rep.ed_gv
+			if rep.ed_gg | rep.ck_gu | rep.ck_gr {
+				put ","
+			}
+			if rep.ed_gg {
+				put " " rep.ed_gg
+			}
+			if rep.ck_gu {
+				put " uniform"
+			}
+			if rep.ck_gr {
+				put " ref"
+			}
+			put ")"
+		}
+		optionarg /hidedefault rep.sp_level
+	endoptions
+END

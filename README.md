@@ -267,9 +267,11 @@ or with `gepwreg_examples #`.
 ## Documentation
 
 **Versions 1.5.0 and 1.4** (`main`, `v15`, `v14`): one Zenodo record, whose
-version 5 documents 1.5.0 — the effect for a given household and the profile
-across quantiles are its Section 7 and Section 9.6 — and whose earlier
-versions document 1.4:
+version 5 ([10.5281/zenodo.23167790](https://doi.org/10.5281/zenodo.23167790))
+documents 1.5.0 — the effect for a given household and the profile across
+quantiles are its Section 7 and Section 9.6 — and whose earlier versions
+document 1.4; the DOI below stands for all of them and resolves to the
+latest:
 
 Araar, A. (2026). *Effects at a quantile of the outcome: a two-step
 percentile-weights estimator, with analytical and survey-design inference*.

@@ -1,0 +1,48 @@
+v 3
+d 'GEPWREG': module for percentile weights regression: the effect of the covariates at a quantile of the outcome
+d
+d  gepwreg estimates the effect of the covariates on an outcome for the
+d  units located at a target quantile of the outcome, at the initial quantile
+d  (the outcome before the contribution of chosen covariates), or along the
+d  rank of an observed covariate, with the percentile weights of Araar (2016):
+d  Gaussian kernel weights on the percentile scale. The effect at a quantile of
+d  the outcome is estimated in two steps: unit-level effects from a
+d  heterogeneity model fitted on the whole sample (a conditional quantile
+d  regression, or interactions with observed variables) are averaged with the
+d  percentile weights on the rank of the outcome, and the estimator converges
+d  to the unconditional quantile partial effect. Standard errors come from the
+d  influence function of the whole procedure, with Taylor linearisation under a
+d  complex survey design declared by svyset, or from a bootstrap that re-runs
+d  the whole procedure; the bandwidth is the MSE-optimal plug-in. ref() gives
+d  the effect for a given household, which holds the composition of the group
+d  at the quantile fixed, and graph() draws the profile of the effects across
+d  percentiles with a simultaneous confidence band and a test that the effect
+d  is constant across percentiles. merr corrects the interaction model for
+d  classical measurement error in the heterogeneity variables. gepwreg_setable
+d  compares the standard errors; a dialog box is included, and the examples of
+d  the help run from clickable links (gepwreg_examples). The paper that
+d  documents the estimators is included as an ancillary file
+d  (gepwreg_paper.pdf) and on Zenodo: https://doi.org/10.5281/zenodo.22845707
+d
+d KW: percentile weights regression
+d KW: unconditional quantile partial effect
+d KW: quantile regression
+d KW: heterogeneous effects
+d KW: survey design
+d KW: influence function
+d KW: bandwidth selection
+d
+d Requires: Stata version 16
+d
+d Distribution-Date: 20261005
+d
+d Author: Abdelkrim Araar, Universite Laval and Partnership for Economic Policy (PEP)
+d Support: email aabd@ecn.ulaval.ca
+d
+f gepwreg.ado
+f gepwreg.dlg
+f gepwreg.sthlp
+f gepwreg_examples.ado
+f gepwreg_setable.ado
+f bkf98I.dta
+f gepwreg_paper.pdf
